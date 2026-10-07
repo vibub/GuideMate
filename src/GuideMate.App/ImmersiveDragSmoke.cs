@@ -44,7 +44,7 @@ public sealed partial class MainWindow
             Drag(25, -15);
             Check(Left == normal.Left && Top == normal.Top, "immersive drag handle cannot move a normal window");
             ToggleImmersive(); await Task.Delay(200);
-            Check(_dragHandle.IsVisible && _dragHandle.Template != null && _dragHandle.ActualWidth == 34
+            Check(_dragHandle.Visibility != Visibility.Collapsed && _dragHandle.Template != null && _dragHandle.ActualWidth == 34
                 && AutomationProperties.GetName(_dragHandle) == "拖动小窗", "immersive Thumb handle keeps its icon, tooltip and stable dimensions");
             var left = Left; var top = Top; var size = Bounds();
             Drag(25, -15); await Task.Delay(50);
@@ -148,7 +148,7 @@ public sealed partial class MainWindow
             Drag(-20, 10); await Task.Delay(50);
             Check(ResizeMode == ResizeMode.CanResizeWithGrip && Math.Abs(ActualWidth - 500) < 1 && Math.Abs(ActualHeight - 281) < 1,
                 "immersive custom drag retains manual resizing and resized dimensions");
-            Ui.PlaceVisible(this); UpdateLayout();
+            Ui.PlaceVisible(this); UpdateImmersiveHover(new Point(20, 20)); UpdateLayout();
             var bitmap = new RenderTargetBitmap(34, 32, 96, 96, PixelFormats.Pbgra32);
             var visual = new DrawingVisual();
             using (var context = visual.RenderOpen())

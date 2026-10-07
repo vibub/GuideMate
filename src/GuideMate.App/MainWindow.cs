@@ -89,7 +89,7 @@ public sealed partial class MainWindow : Window
         {
             Ui.PlaceVisible(this);
             _keys = new(this); _keys.Pressed += OnHotkey;
-            _keys.TemporaryRateReleased += () => Fire(EndTemporaryRateAsync);
+            _keys.TemporaryRateReleased += () => Fire(() => EndTemporaryRateAsync(true));
             var error = _keys.Apply(_settings.Hotkeys, _settings.TemporaryHoldMilliseconds);
             _hotkeyStatus.Text = (error ?? "全局热键已启用") + "\n紧急恢复：" + _keys.EmergencyBinding;
             if (!_keys.EmergencyAvailable) _hotkeyStatus.Text += $"（冲突 {_keys.EmergencyError}，穿透已禁用）";
@@ -99,13 +99,13 @@ public sealed partial class MainWindow : Window
         Loaded += async (_, _) => await InitializeBrowserAsync();
         SizeChanged += (_, _) => { UpdateClip(); UpdateSmallWindowLayout(); if (_onlineProfile != null) { InvalidateOnlineSample(); UpdateDirection(); } };
         LocationChanged += (_, _) => UpdateDanmakuOverlay();
-        IsVisibleChanged += (_, _) => { UpdateDanmakuOverlay(); UpdateXRayTracking(); if (!IsVisible) { InvalidateOnlineSample(); UpdateDirection(); } };
+        IsVisibleChanged += (_, _) => { UpdateDanmakuOverlay(); UpdateXRayTracking(); UpdateImmersiveControls(); if (!IsVisible) { InvalidateOnlineSample(); UpdateDirection(); } };
         StateChanged += (_, _) =>
         {
             if (WindowState == WindowState.Minimized) { CancelImmersiveDrag(); InvalidateOnlineSample(); UpdateDirection(); }
             else _restoreWindowState = WindowState;
             CancelEdgeSeek(); UpdateXRayTracking();
-            UpdateOverlay(); UpdateDanmakuOverlay();
+            UpdateOverlay(); UpdateDanmakuOverlay(); UpdateImmersiveControls();
         };
         _saveTimer.Tick += (_, _) => { UpdateHistory(); SaveSettings(); };
         _fadeTimer.Tick += (_, _) => { _fadeTimer.Stop(); _faded = false; ApplyWindowOpacity(); };
@@ -113,7 +113,7 @@ public sealed partial class MainWindow : Window
         {
             CancelImmersiveDrag();
             CancelEdgeSeek(); StopXRayTracking();
-            _closing = true; _onlineVisionTimer.Stop(); InvalidateOnlineSample(); _saveTimer.Stop(); _fadeTimer.Stop(); UpdateHistory(); SaveSettings();
+            _closing = true; UpdateImmersiveControls(); _onlineVisionTimer.Stop(); InvalidateOnlineSample(); _saveTimer.Stop(); _fadeTimer.Stop(); UpdateHistory(); SaveSettings();
             _chromeServer?.Dispose();
             _keys?.Dispose(); _tray?.Dispose(); _overlay?.Close(); _danmakuOverlay?.Close(); _browser.Dispose();
         };
@@ -217,9 +217,9 @@ public sealed partial class MainWindow : Window
         _dragHandle.HorizontalAlignment = HorizontalAlignment.Left; _dragHandle.VerticalAlignment = VerticalAlignment.Top;
         _dragHandle.Margin = new(8); _dragHandle.Visibility = Visibility.Collapsed; _dragHandle.Opacity = 0.7;
         _dragHandle.DragDelta += (_, e) => QueueImmersiveDrag(e);
-        _dragHandle.DragCompleted += (_, e) => FinishImmersiveDrag(e.Canceled);
+        _dragHandle.DragCompleted += (_, e) => { FinishImmersiveDrag(e.Canceled); SampleImmersiveCursor(); };
         _workspace.Children.Add(_dragHandle);
-        BuildSmallWindowControls();
+        BuildSmallWindowControls(); BuildImmersiveFeedback();
         Grid.SetRow(_workspace, 2); _root.Children.Add(_workspace);
 
         var playback = new Grid { Margin = new(10, 4, 10, 4) };
@@ -434,35 +434,40 @@ public sealed partial class MainWindow : Window
         if (_settings.FadeOnCombat) { _faded = true; ApplyWindowOpacity(); _fadeTimer.Stop(); _fadeTimer.Start(); }
     }
 
-    private async Task CommandAsync(string action, double? value = null)
+    private async Task<bool> CommandAsync(string action, double? value = null)
     {
         if (action is "position" or "seek" or "previousEpisode" or "nextEpisode")
         { InvalidateOnlineSample(); if (action is "position" or "seek") _videoSeeking = true; UpdateDirection(); }
         _notice = "";
-        if (_browser.CoreWebView2 == null) { _status.Text = "浏览器尚未就绪。"; return; }
+        if (_browser.CoreWebView2 == null) { _status.Text = _notice = "浏览器尚未就绪。"; return false; }
         var request = JsonSerializer.Serialize(new { action, value });
         var response = await _videoRouter!.ExecuteAsync("window.guideMate?.command(" + request + ") ?? false", action is "previousEpisode" or "nextEpisode");
         if (response == "false" || response == "null") _status.Text = _notice = action is "previousEpisode" or "nextEpisode" ? "本页未找到可用的上一集 / 下一集。" : MissingVideoNotice;
+        return response == "true";
     }
-    private async Task SetRateAsync(double rate)
+    private async Task<bool> SetRateAsync(double rate)
     {
         _keys?.CancelTemporaryRate();
         await EndTemporaryRateAsync();
         _settings.Rate = Math.Clamp(rate, 0.25, 4);
         _temporaryRestoreRate = _settings.Rate;
-        await CommandAsync("rate", _settings.Rate);
+        return await CommandAsync("rate", _settings.Rate);
     }
-    private async Task StartTemporaryRateAsync()
+    private async Task<bool> StartTemporaryRateAsync()
     {
-        if (_temporaryRateActive || _duration <= 0) return;
+        if (_temporaryRateActive || _duration <= 0) return false;
         _temporaryRestoreRate = _settings.Rate; _temporaryRateActive = true;
-        await CommandAsync("rate", _settings.TemporaryRate);
+        return await CommandAsync("rate", _settings.TemporaryRate);
     }
-    private async Task EndTemporaryRateAsync()
+    private Task EndTemporaryRateAsync() => EndTemporaryRateAsync(false);
+    private async Task EndTemporaryRateAsync(bool feedback)
     {
         if (!_temporaryRateActive) return;
         _temporaryRateActive = false;
-        await CommandAsync("rate", _temporaryRestoreRate ?? _settings.Rate);
+        var restoredRate = _temporaryRestoreRate ?? _settings.Rate;
+        var version = _temporaryFeedbackVersion;
+        var success = await CommandAsync("rate", restoredRate);
+        if (feedback && success) ShowHotkeyFeedback("恢复倍速" + FeedbackNumber(restoredRate) + "x", version);
     }
     private async void Fire(Func<Task> operation)
     {
@@ -576,19 +581,25 @@ public sealed partial class MainWindow : Window
     }
     private void OnHotkey(string action)
     {
+        ClearHotkeyFeedback();
+        var version = _hotkeyFeedbackVersion;
         switch (action)
         {
-            case "PlayPause": Fire(() => CommandAsync("toggle")); break;
-            case "SeekBack": Fire(() => CommandAsync("seek", -_settings.SeekSeconds)); break;
-            case "SeekForward": Fire(() => CommandAsync("seek", _settings.SeekSeconds)); break;
-            case "RateUp": Fire(() => SetRateAsync(_settings.Rate + 0.25)); break;
-            case "RateDown": Fire(() => SetRateAsync(_settings.Rate - 0.25)); break;
-            case "TemporaryRate": Fire(StartTemporaryRateAsync); break;
-            case "PreviousEpisode": Fire(() => CommandAsync("previousEpisode")); break;
-            case "NextEpisode": Fire(() => CommandAsync("nextEpisode")); break;
-            case "Immersive": ToggleImmersive(); break;
-            case "Hide": ToggleHidden(); break;
-            case "ClickThrough": SetClickThrough(!_through); break;
+            case "PlayPause": Fire(() => VideoHotkeyAsync("toggle", null, "", version)); break;
+            case "SeekBack": Fire(() => VideoHotkeyAsync("seek", -_settings.SeekSeconds, "后退" + FeedbackNumber(_settings.SeekSeconds) + "s", version)); break;
+            case "SeekForward": Fire(() => VideoHotkeyAsync("seek", _settings.SeekSeconds, "快进" + FeedbackNumber(_settings.SeekSeconds) + "s", version)); break;
+            case "RateUp": Fire(() => RateHotkeyAsync(_settings.Rate + 0.25, version)); break;
+            case "RateDown": Fire(() => RateHotkeyAsync(_settings.Rate - 0.25, version)); break;
+            case "TemporaryRate": Fire(() => TemporaryRateHotkeyAsync(version)); break;
+            case "PreviousEpisode": Fire(() => VideoHotkeyAsync("previousEpisode", null, "上一集", version)); break;
+            case "NextEpisode": Fire(() => VideoHotkeyAsync("nextEpisode", null, "下一集", version)); break;
+            case "Immersive": ToggleImmersive(); ShowHotkeyFeedback("沉浸模式", _hotkeyFeedbackVersion); break;
+            case "Hide": ToggleHidden(); ShowHotkeyFeedback("已恢复", _hotkeyFeedbackVersion); break;
+            case "ClickThrough":
+                var through = !_through;
+                SetClickThrough(through);
+                ShowHotkeyFeedback(_through == through ? through ? "开启鼠标穿透" : "关闭鼠标穿透" : "鼠标穿透不可用", version);
+                break;
             case "Emergency": EmergencyRestore(); break;
         }
     }
@@ -615,7 +626,7 @@ public sealed partial class MainWindow : Window
         _workspace.ForceCursor = _immersive;
         foreach (var element in _chrome) element.Visibility = _immersive ? Visibility.Collapsed : Visibility.Visible;
         _sidebar.Visibility = _immersive ? Visibility.Collapsed : Visibility.Visible;
-        _dragHandle.Visibility = _immersive ? Visibility.Visible : Visibility.Collapsed;
+        _dragHandle.Visibility = _immersive ? Visibility.Hidden : Visibility.Collapsed;
         if (_immersive)
         {
             _normalBounds = new(Left, Top, ActualWidth, ActualHeight);
@@ -634,7 +645,7 @@ public sealed partial class MainWindow : Window
             Width = _normalBounds.Width; Height = _normalBounds.Height; Left = _normalBounds.Left; Top = _normalBounds.Top;
             Fire(() => CommandAsync("focusOff"));
         }
-        UpdateClip(); UpdateDanmakuOverlay();
+        UpdateClip(); UpdateDanmakuOverlay(); UpdateImmersiveControls();
         Dispatcher.InvokeAsync(() => { _browser.Visibility = Visibility.Visible; _browser.UpdateLayout(); UpdateSmallWindowLayout(); UpdateXRayTracking(); }, DispatcherPriority.Loaded);
     }
     private void ToggleHidden()
@@ -739,6 +750,7 @@ public sealed partial class MainWindow : Window
             await VerifyWindowCommandsAsync(checks);
             await VerifyImmersiveDragAsync(checks);
             await VerifySmallWindowAsync(checks);
+            await VerifyImmersiveFeedbackAsync(checks);
             await VerifyCursorAsync(checks);
             await _browser.CoreWebView2.ExecuteScriptAsync("document.querySelector('video').style.cursor = 'none'");
             ToggleImmersive(); await Task.Delay(500);

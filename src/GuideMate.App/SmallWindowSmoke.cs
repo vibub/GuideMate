@@ -12,8 +12,9 @@ public sealed partial class MainWindow
         try
         {
             var end = DateTime.UtcNow.AddSeconds(25);
-            while (_duration < 20) { if (DateTime.UtcNow > end) throw new Exception("Sample video failed to load"); await Task.Delay(100); }
+            while (_duration < 20 || _navigationVersion == 0) { if (DateTime.UtcNow > end) throw new Exception("Sample video failed to load"); await Task.Delay(100); }
             await VerifySmallWindowAsync(checks);
+            await VerifyImmersiveFeedbackAsync(checks);
             WriteSmokeResult(true, "", checks);
         }
         catch (Exception ex) { WriteSmokeResult(false, ex.ToString(), checks); }
@@ -197,7 +198,9 @@ public sealed partial class MainWindow
             OnHotkey("Hide"); await Task.Delay(150);
             Check(IsVisible && _immersive && _xrayTimer.IsEnabled && Math.Abs(Opacity - 0.65) < 0.001
                 && _edgeProgress.IsVisible && _settings.XRayEnabled && _url == url && _navigationVersion == navigation,
-                "Hide action restores immersive mode, appearance, progress and same loaded page");
+                "Hide action restores immersive mode, appearance, progress and same loaded page: " + JsonSerializer.Serialize(new
+                { IsVisible, _immersive, xrayTimer = _xrayTimer.IsEnabled, Opacity, progress = _edgeProgress.IsVisible,
+                    xray = _settings.XRayEnabled, expectedUrl = url, _url, expectedNavigation = navigation, _navigationVersion }));
             _edgeSeeking = true; WindowState = WindowState.Minimized;
             Check(!_xrayTimer.IsEnabled && !_edgeSeeking, "minimize stops polling and cancels an unfinished edge seek");
             WindowState = WindowState.Normal; await Task.Delay(100);

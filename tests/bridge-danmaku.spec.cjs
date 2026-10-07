@@ -29,6 +29,8 @@ function check(test,label) { assert.ok(test,label); checks++; }
 function model(id,mode=1,extra={}) {
   return {showed:true,showTime:9,textData:{dmid:id,stime:9,text:'测试弹幕 '+id,color:0x123456,size:25,mode,...extra}};
 }
+check(window.guideMate.playbackState().paused===false && window.guideMate.playbackState().rate===1,
+  'playback feedback reads the controlled video state directly');
 renderer.manager.visualArray=[model('a'),model('top',5),model('bottom',4),model('reverse',6),
   {...model('blocked'),isHide:true},{...model('future'),showed:false},model('script',7),
   model('special',2000),model('empty',1,{text:''}),model('long',1,{text:'x'.repeat(201)})];

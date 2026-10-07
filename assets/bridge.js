@@ -244,6 +244,10 @@
   window.guideMate = {
     frameInfo,
     captureFrame,
+    playbackState() {
+      const video = visibleVideo() || (target?.isConnected ? target : null);
+      return video ? {paused:video.paused, rate:finite(video.playbackRate)} : null;
+    },
     command(request) {
       if (request.action === 'nextEpisode') return episode(true);
       if (request.action === 'previousEpisode') return episode(false);
