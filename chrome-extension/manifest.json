@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "随引 · B站登录同步",
+  "version": "1.0.0",
+  "description": "经本机确认将当前 Chrome 的 B站会话同步给随引。",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnhc0cI5zI6XoBLosRTJSbC4bLBwSaXY4sRqSaJ6W5GRilWSR7QNqLNCRKhk+UsWGlFk3SbQOjvxNpHO6i1D6wbKN78MQT6zahiChJ7pf2FDcMtgQRHip661JP56jC3E9+bLGQ1k2nehDV3lZYFHCLGwRzH5zEMVdgv1CfHPJFBmUQy/CYjwPn1Y3yek7HDXXGHS23qB3r+UsbwyUcGAzfP+JiGowYVXzLGrF7EWGdyZn15KOLeP3BWe93OH5uNPstooRTvaZmsPQ9G4Qvp1v++VD1A3mXmUCje6f7CSGBpOjAJh2mJabn+lIieoPfIDZhRPUJpiamtSs2/0JnxhyXQIDAQAB",
+  "permissions": ["cookies", "nativeMessaging"],
+  "host_permissions": ["https://*.bilibili.com/*", "http://*.bilibili.com/*"],
+  "action": {"default_popup": "popup.html"},
+  "background": {"service_worker": "service-worker.js"}
+}

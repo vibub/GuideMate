@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>随引跨域验证</title>
+<style>html,body{margin:0;height:100%;background:#21342e;color:white;font:14px sans-serif} h1{font-size:18px;margin:0;padding:12px} iframe{width:90%;height:80%;border:0;display:block;margin:0 auto}</style>
+<h1>随引跨域验证</h1>
+<iframe id="hidden-player" src="https://frame.guidemate.local/demo.html" style="display:none"></iframe>
+<iframe id="player" src="https://frame.guidemate.local/demo.html"></iframe>
+<script>if(location.search.includes('nested')) document.querySelector('#player').src='https://frame.guidemate.local/iframe-inner.html';</script>
+</html>

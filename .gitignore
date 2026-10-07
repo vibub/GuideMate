@@ -1,0 +1,36 @@
+# Build outputs and local tooling
+**/bin/
+**/obj/
+.tools/
+/artifacts/
+/TestResults/
+*.user
+*.suo
+.vs/
+.vscode/
+.idea/
+__pycache__/
+*.py[cod]
+node_modules/
+
+# Private runtime profiles (never publish browser sessions or user settings)
+**/WebView2/
+**/*.WebView2/
+settings.json
+active-profile.json
+*.log
+*.dmp
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+*.key
+
+# Machine-specific instructions and historical acceptance evidence
+/AGENTS.md
+/docs/VERIFICATION.md
+
+# Local media samples; only the sample guide is public
+/samples/genshin/*
+!/samples/genshin/README.md

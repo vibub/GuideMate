@@ -1,0 +1,10 @@
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.webm binary
+*.png binary
+*.jpg binary
+*.ico binary
+
+# Keep upstream license formatting.
+licenses/*.txt -whitespace

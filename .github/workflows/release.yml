@@ -1,0 +1,45 @@
+name: Release draft
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6.0.0
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+      - name: Install FFmpeg for vision checks
+        run: choco install ffmpeg --no-progress -y
+      - name: Build and run regression checks
+        run: ./scripts/Test-GuideMate.ps1
+      - name: Package Windows application
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: ./scripts/Package-GuideMate.ps1 -Version $env:RELEASE_VERSION
+      - name: Create draft with ZIP and SHA256
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          $assets = Get-ChildItem -LiteralPath ./artifacts/releases -File | ForEach-Object FullName
+          gh release create $env:RELEASE_VERSION @assets --verify-tag --draft --generate-notes --title "随引 $env:RELEASE_VERSION"
+          if ($LASTEXITCODE -ne 0) { throw 'Creating the release draft failed.' }

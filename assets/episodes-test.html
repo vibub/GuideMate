@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><title>随引分集验证</title>
+<style>html,body{margin:0;height:100%;background:#122d24;color:#fff;font:14px sans-serif}nav{display:flex;gap:8px;padding:12px}button{padding:8px 16px;border:0;border-radius:4px}button[aria-current="page"]{background:#177e69;color:#fff}video{width:100%;height:80%;object-fit:contain}</style>
+<nav><button data-guidemate-episode aria-current="page">第 1 集</button><button data-guidemate-episode>第 2 集</button><button data-guidemate-episode>第 3 集</button></nav>
+<video src="demo.webm" controls muted preload="auto"></video>
+<script>
+document.querySelectorAll('[data-guidemate-episode]').forEach((button,index)=>button.addEventListener('click',()=>{
+  document.querySelectorAll('[aria-current]').forEach(el=>el.removeAttribute('aria-current'));
+  button.setAttribute('aria-current','page');history.replaceState(null,'','?episode='+(index+1));
+  const video=document.querySelector('video');video.pause();video.currentTime=0;
+  document.title='随引分集验证 · '+(index+1);
+}));
+</script></html>

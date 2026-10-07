@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>本地视频 · 随引</title>
+<style>html,body{margin:0;width:100%;height:100%;background:#000}video{width:100%;height:100%;object-fit:contain}#error{color:#fff;position:absolute;left:24px;top:24px;font:14px sans-serif}</style></head>
+<body><video controls playsinline preload="auto"></video><div id="error"></div>
+<script>
+const file = new URLSearchParams(location.search).get('file');
+const video = document.querySelector('video');
+if (file) {
+  video.src = 'https://media.guidemate.local/video';
+  document.title = file + ' · 随引';
+} else document.getElementById('error').textContent = '未选择视频。';
+video.addEventListener('error', () => document.getElementById('error').textContent = '视频无法播放，可能是文件不存在或编码不受支持。');
+</script></body></html>

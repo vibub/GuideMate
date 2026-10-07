@@ -1,0 +1,16 @@
+name: 功能建议
+description: 描述使用场景与期望行为
+body:
+  - type: textarea
+    id: scenario
+    attributes:
+      label: 使用场景与现有问题
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 期望行为
+      description: 说明操作流程，必要时给出替代方案。
+    validations:
+      required: true

@@ -1,0 +1,32 @@
+name: 问题报告
+description: 提供可复现的问题及环境
+body:
+  - type: markdown
+    attributes:
+      value: 请勿上传 Cookie、配对码、登录二维码、完整 settings.json 或浏览器资料。截图请遮挡账号和 UID。
+  - type: input
+    id: version
+    attributes:
+      label: 随引版本
+      description: Release 版本或源码提交号
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境
+      description: Windows、WebView2、显示缩放；若涉及热键，说明鼠标及前台应用。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤
+      description: 说明入口、窗口模式、操作，以及预期和实际行为。
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 脱敏截图或日志
+      description: 可提供公开视频网址。不要上传完整用户数据目录。

@@ -1,0 +1,46 @@
+name: Windows CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6.0.0
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+      - name: Install FFmpeg for vision checks
+        run: choco install ffmpeg --no-progress -y
+      - name: Build and run regression checks
+        run: ./scripts/Test-GuideMate.ps1
+      - name: Package Windows application
+        run: ./scripts/Package-GuideMate.ps1 -Version v0.0.0-ci
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: GuideMate-win-x64
+          path: |
+            artifacts/releases/*.zip
+            artifacts/releases/*.sha256
+          if-no-files-found: error
+          retention-days: 14

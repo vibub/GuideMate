@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8"><title>随引在线视频取帧验证</title>
+<style>html,body{margin:0;width:100%;height:100%;background:#263630;overflow:hidden}video{display:block;width:100%;height:100%;object-fit:contain}iframe{display:block;margin:25px auto;width:88%;height:82%;border:6px solid #586860}</style>
+<script>
+addEventListener('DOMContentLoaded', () => {
+  const params = new URLSearchParams(location.search);
+  const otherUrl = new URL(location.href);
+  otherUrl.hostname = location.hostname === 'guidemate.local' ? 'frame.guidemate.local'
+    : location.hostname === 'frame.guidemate.local' ? 'guidemate.local'
+    : location.hostname === '127.0.0.1' ? 'localhost' : '127.0.0.1';
+  const other = otherUrl.origin;
+  if (params.has('frame') || params.has('nested')) {
+    const frame = document.createElement('iframe');
+    frame.src = `${other}/online-vision-test.html?${params.has('nested') ? 'frame=1' : 'cross=1'}`;
+    document.body.append(frame);
+  } else {
+    const video = document.createElement('video');
+    video.controls = true; video.muted = true; video.preload = 'auto';
+    video.src = params.has('cross') ? `${other}/online-vision-test.webm`
+      : params.has('small') ? 'online-vision-small.webm' : 'online-vision-test.webm';
+    document.body.append(video);
+  }
+});
+</script>
+</html>
