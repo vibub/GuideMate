@@ -28,6 +28,7 @@ public class AppSettings
     public WindowTopmostMode? TopmostMode { get; set; }
     public double Opacity { get; set; } = 1;
     public double? ImmersiveOpacity { get; set; }
+    public bool FullscreenDanmaku { get; set; } = true;
     public bool XRayEnabled { get; set; }
     public double XRayRadius { get; set; } = 70;
     public double HoleRatio { get; set; } = 0.3;

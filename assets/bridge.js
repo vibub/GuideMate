@@ -103,6 +103,39 @@
     }
     return '';
   };
+  let danmakuVideo = null, danmakuEpoch = 0;
+  const danmakuSeek = () => { danmakuEpoch++; };
+  const danmaku = video => {
+    const host = location.hostname || '';
+    if (host !== 'bilibili.com' && !host.endsWith('.bilibili.com')) return null;
+    // The current Bilibili player exposes its post-filter render models. Reading
+    // these avoids intercepting canvas calls or bypassing the user's DM filters.
+    if (danmakuVideo !== video) {
+      danmakuVideo?.removeEventListener?.('seeking', danmakuSeek);
+      danmakuVideo = video; danmakuEpoch++;
+      video.addEventListener?.('seeking', danmakuSeek);
+    }
+    const api = window.player?.danmaku;
+    const renderer = typeof api?.getDanmakuX === 'function' ? api.getDanmakuX() : null;
+    const models = renderer?.manager?.visualArray;
+    if (!Array.isArray(models)) return {available:false, enabled:false, items:[]};
+    const enabled = renderer.visible !== false && (typeof api.isOpen !== 'function' || api.isOpen());
+    const items = [];
+    if (enabled && !video.seeking) for (const model of models) {
+      const data = model.textData;
+      if (!data || model.isHide || model.showed === false || typeof data.text !== 'string') continue;
+      const mode = Number(data.rawMode ?? data.mode);
+      if (![1, 2, 3, 4, 5, 6].includes(mode)) continue; // Exclude scripts, ads and special effects.
+      const text = data.text.replace(/[\r\n]+/g, ' ').trim();
+      if (!text || text.length > 200 || data.dmid == null) continue;
+      items.push({id:String(data.dmid) + ':' + finite(data.stime), text, mode,
+        color:Number.isFinite(data.color) ? Math.max(0, Math.min(0xffffff, data.color)) : 0xffffff,
+        size:Number.isFinite(data.size) ? Math.max(18, Math.min(36, data.size)) : 25,
+        offset:Math.max(0, Math.min(4, finite(renderer.manager.renderTime) - finite(model.showTime)))});
+      if (items.length >= 240) break;
+    }
+    return {available:true, enabled:!!enabled, epoch:frameToken + ':' + danmakuEpoch, items};
+  };
   const hideControls = () => {
     if (!focusedControls) return;
     if (controlsPointerDown || focusedControls.video.seeking) {
@@ -244,7 +277,7 @@
       if (focusEnabled) setFocus(true);
     }
     post({ type: 'state', area:area(video), mediaKey:location.href + '|' + video.currentSrc, time: finite(video.currentTime), duration: finite(video.duration), paused: video.paused,
-      rate: video.playbackRate, volume: video.volume, muted: video.muted, subtitle: subtitle(video),
+      rate: video.playbackRate, volume: video.volume, muted: video.muted, subtitle: subtitle(video), danmaku:danmaku(video),
       width:video.videoWidth, height:video.videoHeight, seeking:video.seeking });
   }, 250);
 })();

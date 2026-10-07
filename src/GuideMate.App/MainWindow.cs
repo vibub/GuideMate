@@ -72,12 +72,13 @@ public sealed partial class MainWindow : Window
     private bool _navigationRequested;
     private int _navigationVersion;
 
-    public MainWindow(string dataPath, bool smoke, string? initialMedia = null, string? profileProbe = null, string? episodeProbe = null, bool smallWindowProbe = false, bool onlineVisionProbe = false, string? onlineVisionLiveUrl = null)
+    public MainWindow(string dataPath, bool smoke, string? initialMedia = null, string? profileProbe = null, string? episodeProbe = null, bool smallWindowProbe = false, bool onlineVisionProbe = false, string? onlineVisionLiveUrl = null, bool danmakuProbe = false, string? danmakuLiveUrl = null)
     {
         _dataPath = dataPath; _smoke = smoke; _initialMedia = initialMedia; _profileProbe = profileProbe; _episodeProbe = episodeProbe;
         _smallWindowProbe = smallWindowProbe;
         _onlineVisionProbe = onlineVisionProbe;
         _onlineVisionLiveUrl = onlineVisionLiveUrl;
+        _danmakuProbe = danmakuProbe; _danmakuLiveUrl = danmakuLiveUrl;
         _store = new(dataPath); _settings = _store.Load();
         Title = "随引"; Width = Math.Clamp(_settings.Width, 860, 1800); Height = Math.Clamp(_settings.Height, 500, 1200);
         Left = _settings.Left; Top = _settings.Top; MinWidth = 860; MinHeight = 500;
@@ -97,13 +98,14 @@ public sealed partial class MainWindow : Window
         };
         Loaded += async (_, _) => await InitializeBrowserAsync();
         SizeChanged += (_, _) => { UpdateClip(); UpdateSmallWindowLayout(); if (_onlineProfile != null) { InvalidateOnlineSample(); UpdateDirection(); } };
-        IsVisibleChanged += (_, _) => { UpdateXRayTracking(); if (!IsVisible) { InvalidateOnlineSample(); UpdateDirection(); } };
+        LocationChanged += (_, _) => UpdateDanmakuOverlay();
+        IsVisibleChanged += (_, _) => { UpdateDanmakuOverlay(); UpdateXRayTracking(); if (!IsVisible) { InvalidateOnlineSample(); UpdateDirection(); } };
         StateChanged += (_, _) =>
         {
             if (WindowState == WindowState.Minimized) { CancelImmersiveDrag(); InvalidateOnlineSample(); UpdateDirection(); }
             else _restoreWindowState = WindowState;
             CancelEdgeSeek(); UpdateXRayTracking();
-            UpdateOverlay();
+            UpdateOverlay(); UpdateDanmakuOverlay();
         };
         _saveTimer.Tick += (_, _) => { UpdateHistory(); SaveSettings(); };
         _fadeTimer.Tick += (_, _) => { _fadeTimer.Stop(); _faded = false; ApplyWindowOpacity(); };
@@ -113,7 +115,7 @@ public sealed partial class MainWindow : Window
             CancelEdgeSeek(); StopXRayTracking();
             _closing = true; _onlineVisionTimer.Stop(); InvalidateOnlineSample(); _saveTimer.Stop(); _fadeTimer.Stop(); UpdateHistory(); SaveSettings();
             _chromeServer?.Dispose();
-            _keys?.Dispose(); _tray?.Dispose(); _overlay?.Close(); _browser.Dispose();
+            _keys?.Dispose(); _tray?.Dispose(); _overlay?.Close(); _danmakuOverlay?.Close(); _browser.Dispose();
         };
     }
 
@@ -302,7 +304,7 @@ public sealed partial class MainWindow : Window
             _videoRouter.MessageReceived += OnWebMessage;
             _videoRouter.ActiveChanged += () =>
             {
-                ResetOnlineVision(); UpdateDirection();
+                ResetDanmaku(); ResetOnlineVision(); UpdateDirection();
                 _keys?.CancelTemporaryRate(); Fire(EndTemporaryRateAsync);
                 if (_immersive) Fire(() => CommandAsync("focusOn"));
             };
@@ -311,7 +313,7 @@ public sealed partial class MainWindow : Window
                 if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https" or "about"))
                 { e.Cancel = true; _status.Text = "仅支持 http/https 网页和应用本地播放器。"; return; }
                 UpdateHistory();
-                ResetOnlineVision();
+                ResetDanmaku(); ResetOnlineVision();
                 _keys?.CancelTemporaryRate();
                 _temporaryRateActive = false; _temporaryRestoreRate = null; _mediaKey = "";
                 var samePage = e.Uri == _url;
@@ -347,7 +349,7 @@ public sealed partial class MainWindow : Window
             else if (_initialMedia != null) NavigateMedia(_initialMedia);
             else Navigate("https://www.bilibili.com/");
             if (_store.LoadWarning != null) _status.Text = _store.LoadWarning;
-            if (_smoke) _ = _profileProbe != null ? RunProfileProbeAsync()
+            if (_smoke) _ = _danmakuProbe ? RunDanmakuProbeAsync() : _profileProbe != null ? RunProfileProbeAsync()
                 : _episodeProbe != null ? RunBilibiliEpisodeProbeAsync()
                 : _onlineVisionProbe ? RunOnlineVisionProbeAsync() : _smallWindowProbe ? RunSmallWindowProbeAsync() : RunSmokeTestAsync();
         }
@@ -368,7 +370,7 @@ public sealed partial class MainWindow : Window
             if (type.GetString() == "error") { _notice = root.GetProperty("message").GetString() ?? "播放失败"; _status.Text = _notice; return; }
             if (type.GetString() == "no-video")
             {
-                InvalidateOnlineSample();
+                ResetDanmaku(); InvalidateOnlineSample();
                 _position = _duration = 0; _paused = true; _clock.Text = "00:00 / 00:00";
                 _timeline.Value = 0; _timeline.Maximum = 1; ((TextBlock)_play.Content).Text = "\uE768";
                 CancelEdgeSeek(); UpdateEdgeProgress();
@@ -379,6 +381,7 @@ public sealed partial class MainWindow : Window
             var mediaKey = root.TryGetProperty("mediaKey", out var media) ? media.GetString() ?? "" : "";
             if (_mediaKey.Length > 0 && mediaKey != _mediaKey)
             {
+                ResetDanmaku();
                 _keys?.CancelTemporaryRate(); Fire(EndTemporaryRateAsync);
                 _cues = []; _combatEvents.Clear(); _lastCaption = ""; _subtitleSource.Text = "网页字幕"; _notice = "";
                 LoadVisualTrack();
@@ -389,6 +392,7 @@ public sealed partial class MainWindow : Window
             _paused = root.GetProperty("paused").GetBoolean();
             UpdateOnlineVisionState(root);
             var rate = Math.Clamp(Finite(root, "rate", 1), 0.25, 4);
+            SyncDanmaku(root, rate);
             if (!_temporaryRateActive && _temporaryRestoreRate is { } restoredRate && Math.Abs(rate - restoredRate) < 0.01) _temporaryRestoreRate = null;
             if (!_temporaryRateActive && _temporaryRestoreRate == null) _settings.Rate = rate;
             _syncing = true;
@@ -478,7 +482,7 @@ public sealed partial class MainWindow : Window
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
         { _status.Text = "请输入有效的 http/https 地址。"; return; }
         _resume = resume ?? new SavedVideo { Rate = _settings.Rate };
-        ResetOnlineVision(); UpdateDirection();
+        ResetDanmaku(); ResetOnlineVision(); UpdateDirection();
         if (!uri.AbsoluteUri.StartsWith("https://guidemate.local/local.html", StringComparison.OrdinalIgnoreCase)) _pendingLocalFile = null;
         _resumeApplied = false;
         _navigationRequested = true;
@@ -630,7 +634,7 @@ public sealed partial class MainWindow : Window
             Width = _normalBounds.Width; Height = _normalBounds.Height; Left = _normalBounds.Left; Top = _normalBounds.Top;
             Fire(() => CommandAsync("focusOff"));
         }
-        UpdateClip();
+        UpdateClip(); UpdateDanmakuOverlay();
         Dispatcher.InvokeAsync(() => { _browser.Visibility = Visibility.Visible; _browser.UpdateLayout(); UpdateSmallWindowLayout(); UpdateXRayTracking(); }, DispatcherPriority.Loaded);
     }
     private void ToggleHidden()

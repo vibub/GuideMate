@@ -31,6 +31,10 @@ internal sealed class SettingsWindow : Window
         }
         panel.Children.Add(Ui.Text("紧急恢复：" + keys.EmergencyBinding, 12, Ui.Green));
         panel.Children.Add(Ui.Heading("沉浸小窗"));
+        var danmaku = Ui.Toggle("B 站全屏弹幕", settings.FullscreenDanmaku, _ => { });
+        System.Windows.Automation.AutomationProperties.SetName(danmaku, "B 站全屏弹幕");
+        panel.Children.Add(danmaku);
+        panel.Children.Add(Ui.Text("进入沉浸后铺满小窗所在屏幕，鼠标操作穿透。沿用 B 站弹幕开关与屏蔽结果。", 12, Ui.Muted));
         var opacityLabel = Ui.Text($"小窗透明度  {1 - settings.GetImmersiveOpacity():P0}", 12);
         panel.Children.Add(opacityLabel);
         var opacity = Ui.Slider(0, 0.8, 1 - settings.GetImmersiveOpacity(), value => opacityLabel.Text = $"小窗透明度  {value:P0}");
@@ -70,6 +74,8 @@ internal sealed class SettingsWindow : Window
             if (result != null) { error.Text = result; return; }
             settings.SeekSeconds = seconds;
             settings.TemporaryRate = (double)temporaryRate.SelectedItem;
+            settings.FullscreenDanmaku = danmaku.IsChecked == true;
+            owner.ApplyDanmakuSettings();
             settings.ImmersiveOpacity = 1 - opacity.Value;
             settings.XRayEnabled = xray.IsChecked == true;
             settings.XRayRadius = radius.Value;

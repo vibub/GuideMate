@@ -36,6 +36,10 @@ var store = new SettingsStore(temp);
 store.Save(new AppSettings { Rate = 1.5, Bookmarks = [new() { Url = "https://example.com", Position = 12 }] });
 var loaded = store.Load();
 Check(loaded.Rate == 1.5 && loaded.Bookmarks[0].Position == 12, "settings roundtrip");
+Check(loaded.FullscreenDanmaku, "existing profiles enable fullscreen danmaku by default");
+loaded.FullscreenDanmaku = false; store.Save(loaded);
+Check(!store.Load().FullscreenDanmaku && store.Load().Bookmarks[0].Position == 12 && store.Load().Rate == 1.5,
+    "danmaku preference persists without resetting existing video data");
 Check(loaded.GetImmersiveOpacity() == loaded.Opacity && !loaded.XRayEnabled && loaded.XRayRadius == 70,
     "new small-window defaults inherit opacity without enabling X-ray");
 loaded.Opacity = 0.75; loaded.ImmersiveOpacity = 0.45; loaded.XRayEnabled = true; loaded.XRayRadius = 95;

@@ -15,6 +15,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Chrome extension checks failed.' }
     node tests/bridge-subtitles.spec.cjs
     if ($LASTEXITCODE -ne 0) { throw 'Subtitle bridge checks failed.' }
+    node tests/bridge-danmaku.spec.cjs
+    if ($LASTEXITCODE -ne 0) { throw 'Danmaku bridge checks failed.' }
     & $sdkCommand run --project tests/GuideMate.Vision.Specs/GuideMate.Vision.Specs.csproj -c Release
     if ($LASTEXITCODE -ne 0) { throw 'Vision regression checks failed.' }
 } finally {
