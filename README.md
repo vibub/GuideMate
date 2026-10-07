@@ -91,6 +91,6 @@ dotnet run --project tests/GuideMate.Vision.Specs/GuideMate.Vision.Specs.csproj 
 
 ## GitHub 发布与许可证
 
-Windows CI 执行构建与命令行回归并生成可下载的 workflow artifact。推送版本标签后，发布工作流生成 ZIP、SHA256 和 GitHub Release 草稿；人工验收后再公开。步骤见 [发布说明](docs/RELEASING.md)。
+Windows CI 执行构建与命令行回归并生成可下载的 workflow artifact。推送版本标签后，发布工作流生成 ZIP、SHA256 和 GitHub Release 草稿；人工验收后再公开。可运行 `./scripts/Package-GuideMate.ps1 -Version v0.1.0` 在独立目录打包，版本号按实际发布版本填写。
 
 项目原创代码采用 [MIT 许可证](LICENSE)，依赖及素材说明见 [第三方声明](THIRD_PARTY_NOTICES.md)。问题报告请使用仓库 Issue 模板；涉及账号或安全边界的问题参见 [安全说明](SECURITY.md)。
