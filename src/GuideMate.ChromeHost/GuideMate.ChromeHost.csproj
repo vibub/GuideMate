@@ -7,6 +7,6 @@
     <AssemblyName>GuideMate.ChromeHost</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../GuideMate.Core/GuideMate.Core.csproj" />
+    <Compile Include="../GuideMate.Core/ChromeBridge.cs" Link="ChromeBridge.cs" />
   </ItemGroup>
 </Project>

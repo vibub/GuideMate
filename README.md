@@ -88,13 +88,14 @@ dotnet build src/GuideMate.App/GuideMate.App.csproj -c Release
 dotnet run --project tests/GuideMate.Specs/GuideMate.Specs.csproj -c Release
 node tests/chrome.spec.cjs
 node tests/bridge-subtitles.spec.cjs
+node tests/bridge-danmaku.spec.cjs
 dotnet run --project tests/GuideMate.Vision.Specs/GuideMate.Vision.Specs.csproj -c Release
 ./scripts/Publish-GuideMate.ps1
 ```
 
 未选择其他目录时，设置与网页数据保存在 `%LOCALAPPDATA%\GuideMate`。正式启动使用 `--data-dir 路径` 后，会将该选择记在 `%LOCALAPPDATA%\GuideMate\active-profile.json`；以后双击启动脚本或直接运行新版程序都继续使用原目录。热键在该目录的 `settings.json`，网页登录资料在 `WebView2` 子目录；发布只更新程序，不复制或清除用户资料。如果已记住的目录不可用，会报错，不静默创建空白资料。源码仓库和发布 ZIP 均不包含任何个人资料目录。
 
-`--media 视频路径` 可直接打开指定的本地视频，不改变不带参数时默认打开 B 站的行为。`--smoke-test` 执行真实 WebView2 播放、字幕、窗口状态集成检查，然后退出；它使用独立数据目录且不改变正式目录选择，未传 `--data-dir` 时使用新的临时目录。仅构建或发布不会重置热键与账号记录；网站主动退出、Cookie 过期等仍可能要求重新登录。
+`--media 视频路径` 可直接打开指定的本地视频，不改变默认打开 B 站的行为。`--isolated` 使用独立资料目录且不改变正式目录选择，未传 `--data-dir` 时分配新的临时目录；历史冒烟与在线探针已从正式程序移除。仅构建或发布不会重置热键与账号记录。
 
 详细架构、范围、视觉研究条件及验收标准见 [实现文档](docs/IMPLEMENTATION.md)，构建与验证见 [测试说明](docs/TESTING.md)。方向提示可来自字幕规则或本地攻略箭头图像识别，不宣称具备实机 AI 导航、绝对坐标或路线匹配。
 
@@ -105,3 +106,5 @@ dotnet run --project tests/GuideMate.Vision.Specs/GuideMate.Vision.Specs.csproj 
 Windows CI 执行构建与命令行回归并生成可下载的 workflow artifact。推送版本标签后，发布工作流生成 ZIP、SHA256 和 GitHub Release 草稿；人工验收后再公开。可运行 `./scripts/Package-GuideMate.ps1 -Version v0.1.0` 在独立目录打包，版本号按实际发布版本填写。
 
 项目原创代码采用 [MIT 许可证](LICENSE)，依赖及素材说明见 [第三方声明](THIRD_PARTY_NOTICES.md)。问题报告请使用仓库 Issue 模板；涉及账号或安全边界的问题参见 [安全说明](SECURITY.md)。
+
+旧 `--smoke-test` 参数继续作为隔离模式兼容入口，避免旧测试命令访问正式资料；它不再自动执行检查或退出。

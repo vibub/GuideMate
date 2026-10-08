@@ -9,6 +9,7 @@
     <AssemblyName>GuideMate</AssemblyName>
     <AssemblyTitle>随引</AssemblyTitle>
     <Product>随引</Product>
+    <SatelliteResourceLanguages>zh-Hans;zh-Hant;en</SatelliteResourceLanguages>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>../../assets/branding/guidemate.ico</ApplicationIcon>
   </PropertyGroup>
@@ -18,6 +19,6 @@
     <ProjectReference Include="../GuideMate.Core/GuideMate.Core.csproj" />
     <ProjectReference Include="../GuideMate.Vision/GuideMate.Vision.csproj" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
-    <Content Include="../../assets/**" Link="assets/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../assets/bridge.js;../../assets/local.html;../../assets/demo.html;../../assets/demo.srt;../../assets/demo.webm" Link="assets/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

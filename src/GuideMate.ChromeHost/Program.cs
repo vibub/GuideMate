@@ -23,7 +23,7 @@ try
     if (!string.Equals(receiver.MainModule?.FileName, expected, StringComparison.OrdinalIgnoreCase))
         throw new IOException("Unexpected pipe receiver.");
     await ChromeBridge.WriteAsync(pipe, transfer, timeout.Token);
-    reply = JsonSerializer.Deserialize<BridgeReply>(await ChromeBridge.ReadAsync(pipe, timeout.Token), ChromeBridge.JsonOptions)
+    reply = JsonSerializer.Deserialize(await ChromeBridge.ReadAsync(pipe, timeout.Token), ChromeBridgeJsonContext.Default.BridgeReply)
         ?? new(false, "随引没有返回结果。");
 }
 catch (FormatException ex) { reply = new(false, ex.Message); }

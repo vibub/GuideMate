@@ -185,26 +185,6 @@ internal sealed partial class VisionCalibrationWindow : Window
         _result.Text = $"当前帧：{angle:0}° · 几何得分 {detected.Score:0.00}";
     }
 
-    internal void VerifyLayoutAndCapture(string path)
-    {
-        UpdateLayout();
-        var root = (FrameworkElement)Content;
-        foreach (var element in new FrameworkElement[] { _analyze, _refresh, _game, _preset, _northAngle, _northLocked, _time }.Where(e => e.IsVisible))
-        {
-            var topLeft = element.TranslatePoint(new(0, 0), root);
-            if (element.ActualWidth <= 0 || element.ActualHeight <= 0 || topLeft.X < -1 || topLeft.Y < -1
-                || topLeft.X + element.ActualWidth > root.ActualWidth + 1 || topLeft.Y + element.ActualHeight > root.ActualHeight + 1)
-                throw new InvalidOperationException("Calibration control falls outside its content bounds.");
-        }
-        var bitmap = new RenderTargetBitmap((int)Math.Ceiling(root.ActualWidth), (int)Math.Ceiling(root.ActualHeight), 96, 96, PixelFormats.Pbgra32);
-        var visual = new DrawingVisual();
-        using (var drawing = visual.RenderOpen())
-            drawing.DrawRectangle(new VisualBrush(root), null, new Rect(0, 0, root.ActualWidth, root.ActualHeight));
-        bitmap.Render(visual);
-        var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
-        using var output = File.Create(path); encoder.Save(output);
-    }
-
     private async Task AnalyzeAsync()
     {
         if (_info == null || _busy) return;

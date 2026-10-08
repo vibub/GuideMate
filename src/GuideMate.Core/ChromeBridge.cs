@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace GuideMate.Core;
 
@@ -33,7 +34,7 @@ public static class ChromeBridge
     public const string HostName = "com.guidemate.bilibili";
     public const string ExtensionId = "emeedledfchopaemhkhjfpbppffbjhid";
     public const int MaxMessageBytes = 1024 * 1024;
-    public static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    public static JsonSerializerOptions JsonOptions => ChromeBridgeJsonContext.Default.Options;
     public static string PipeName => "GuideMate.Chrome." + Convert.ToHexString(SHA256.HashData(
         Encoding.UTF8.GetBytes(Environment.UserDomainName + "\\" + Environment.UserName)))[..20];
 
@@ -48,7 +49,7 @@ public static class ChromeBridge
 
     public static ChromeTransfer Parse(byte[] payload)
     {
-        var transfer = JsonSerializer.Deserialize<ChromeTransfer>(payload, JsonOptions) ?? throw new FormatException("同步请求为空。");
+        var transfer = JsonSerializer.Deserialize(payload, ChromeBridgeJsonContext.Default.ChromeTransfer) ?? throw new FormatException("同步请求为空。");
         if (transfer.Type != "import-bilibili" || transfer.PairingCode is not { Length: 32 }
             || !transfer.PairingCode.All(char.IsAsciiHexDigit) || transfer.Cookies == null || transfer.Cookies.Count > 300)
             throw new FormatException("同步请求格式无效。");
@@ -80,7 +81,7 @@ public static class ChromeBridge
 
     public static async Task WriteAsync(Stream stream, object message, CancellationToken cancellation = default)
     {
-        var payload = JsonSerializer.SerializeToUtf8Bytes(message, JsonOptions);
+        var payload = JsonSerializer.SerializeToUtf8Bytes(message, ChromeBridgeJsonContext.Default.GetTypeInfo(message.GetType())!);
         if (payload.Length > MaxMessageBytes) throw new FormatException("同步消息过大。");
         var header = new byte[4];
         BinaryPrimitives.WriteUInt32LittleEndian(header, (uint)payload.Length);
@@ -89,3 +90,8 @@ public static class ChromeBridge
         await stream.FlushAsync(cancellation);
     }
 }
+
+[JsonSourceGenerationOptions(JsonSerializerDefaults.Web)]
+[JsonSerializable(typeof(ChromeTransfer))]
+[JsonSerializable(typeof(BridgeReply))]
+public partial class ChromeBridgeJsonContext : JsonSerializerContext { }

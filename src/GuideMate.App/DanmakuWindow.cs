@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows.Interop;
+using System.Windows.Media.Imaging;
 
 namespace GuideMate.App;
 
@@ -34,13 +35,10 @@ internal sealed class DanmakuWindow : Window
         Closed += (_, _) => _surface.SetVisible(false);
     }
 
-    public void FitToMonitor(Window videoWindow)
+    public void FitToMonitor(System.Drawing.Rectangle screen)
     {
-        var ownerHandle = new WindowInteropHelper(videoWindow).Handle;
         var handle = new WindowInteropHelper(this).Handle;
-        if (handle == 0 || !GetWindowRect(ownerHandle, out var ownerRect)) return;
-        var screen = System.Windows.Forms.Screen.FromRectangle(System.Drawing.Rectangle.FromLTRB(
-            ownerRect.Left, ownerRect.Top, ownerRect.Right, ownerRect.Bottom)).Bounds;
+        if (handle == 0) return;
         if (GetWindowRect(handle, out var rect) && rect.Left == screen.Left && rect.Top == screen.Top
             && rect.Right == screen.Right && rect.Bottom == screen.Bottom) return;
         // Native pixel coordinates are essential for monitors with different DPI and negative origins.
@@ -61,7 +59,7 @@ internal sealed class DanmakuWindow : Window
 
     private sealed class DanmakuSurface : FrameworkElement
     {
-        private sealed record Comment(Geometry Text, Brush Color, double Width, double Start, double Duration, int Row, int Mode);
+        private sealed record Comment(BitmapSource Image, Rect InkBounds, double Width, double Start, double Duration, int Row, int Mode);
         private readonly List<Comment> _comments = [];
         private readonly HashSet<string> _seen = [];
         private readonly Stopwatch _clock = new();
@@ -106,7 +104,7 @@ internal sealed class DanmakuWindow : Window
 
         private void RenderFrame(object? sender, EventArgs e)
         {
-            if (_paused || _comments.Count == 0) return;
+            if (_paused || _comments.Count == 0 || _appearance.Opacity == 0) return;
             RemoveExpired();
             InvalidateVisual();
         }
@@ -117,7 +115,11 @@ internal sealed class DanmakuWindow : Window
             InvalidateVisual();
         }
 
-        private void RemoveExpired() => _comments.RemoveAll(comment => MediaTime - comment.Start >= comment.Duration);
+        private void RemoveExpired()
+        {
+            var time = MediaTime;
+            _comments.RemoveAll(comment => time - comment.Start >= comment.Duration);
+        }
 
         public void Update(JsonElement items, double time, bool paused, double rate)
         {
@@ -144,6 +146,7 @@ internal sealed class DanmakuWindow : Window
                 var formatted = new FormattedText(text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
                     _typeface, size, brush, VisualTreeHelper.GetDpi(this).PixelsPerDip);
                 var geometry = formatted.BuildGeometry(new Point(0, 0)); geometry.Freeze();
+                if (geometry.Bounds.IsEmpty) continue;
                 var width = Math.Max(1, formatted.WidthIncludingTrailingWhitespace);
                 var start = time - Math.Clamp(Number(item, "offset", 0), 0, 4);
                 var duration = mode is 4 or 5 ? 5 / _appearance.Speed : (ActualWidth + width) / ScrollSpeed;
@@ -154,7 +157,21 @@ internal sealed class DanmakuWindow : Window
                     var row = mode == 5 ? i : mode == 4 ? rows - i - 1 : (_nextRow + i) % rows;
                     if (_comments.Any(comment => comment.Row == row && (mode is 4 or 5 || comment.Mode is 4 or 5
                         || (mode == 6) != (comment.Mode == 6) || !HasRoom(comment, width, start, mode)))) continue;
-                    _comments.Add(new(geometry, brush, width, start, duration, row, mode));
+                    // Rasterize the outline once per accepted comment; each frame only blits its sprite.
+                    var bounds = geometry.Bounds; bounds.Inflate(2, 2);
+                    var dpi = VisualTreeHelper.GetDpi(this);
+                    var visual = new DrawingVisual();
+                    using (var drawing = visual.RenderOpen())
+                    {
+                        drawing.PushTransform(new TranslateTransform(-bounds.X, -bounds.Y));
+                        drawing.DrawGeometry(null, _outline, geometry);
+                        drawing.DrawGeometry(brush, null, geometry);
+                    }
+                    var image = new RenderTargetBitmap(Math.Max(1, (int)Math.Ceiling(bounds.Width * dpi.DpiScaleX)),
+                        Math.Max(1, (int)Math.Ceiling(bounds.Height * dpi.DpiScaleY)),
+                        96 * dpi.DpiScaleX, 96 * dpi.DpiScaleY, PixelFormats.Pbgra32);
+                    image.Render(visual); image.Freeze();
+                    _comments.Add(new(image, bounds, width, start, duration, row, mode));
                     _nextRow = (row + 1) % rows;
                     break;
                 }
@@ -181,10 +198,8 @@ internal sealed class DanmakuWindow : Window
             drawing.PushClip(new RectangleGeometry(new Rect(0, 0, ActualWidth, AreaHeight)));
             foreach (var comment in _comments)
             {
-                drawing.PushTransform(new TranslateTransform(X(comment), 12 + comment.Row * RowHeight));
-                drawing.DrawGeometry(null, _outline, comment.Text);
-                drawing.DrawGeometry(comment.Color, null, comment.Text);
-                drawing.Pop();
+                drawing.DrawImage(comment.Image, new Rect(X(comment) + comment.InkBounds.X,
+                    12 + comment.Row * RowHeight + comment.InkBounds.Y, comment.InkBounds.Width, comment.InkBounds.Height));
             }
             drawing.Pop();
         }

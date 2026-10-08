@@ -36,7 +36,7 @@
 
 ## 依赖
 
-OpenCvSharp4 与 Windows runtime 固定为 `4.13.0.20260627`，官方 NuGet 包随构建恢复，发布包带 native DLL。FFmpeg/ffprobe 使用用户已安装的本机程序，本轮未安装系统 SDK，也不上传视频。公开文档：<https://github.com/shimat/opencvsharp>、<https://ffmpeg.org/ffmpeg-all.html>。
+OpenCvSharp4 与 Windows Slim runtime 固定为 `4.13.0.20260627`，官方 NuGet 包随构建恢复，发布包带 native DLL。FFmpeg/ffprobe 使用用户已安装的本机程序，本轮未安装系统 SDK，也不上传视频。公开文档：<https://github.com/shimat/opencvsharp>、<https://ffmpeg.org/ffmpeg-all.html>。
 
 ## 需要的样本
 

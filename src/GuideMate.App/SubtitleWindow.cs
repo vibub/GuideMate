@@ -33,8 +33,12 @@ internal sealed class SubtitleWindow : Window
         MouseLeftButtonDown += (_, e) => { if (e.ClickCount == 1) DragMove(); };
         Update("", null);
     }
+    private string? _lastText;
+    private DirectionHint? _lastHint;
     public void Update(string text, DirectionHint? hint)
     {
+        if (_lastText == text && _lastHint == hint) return;
+        _lastText = text; _lastHint = hint;
         SizeToContent = SizeToContent.Height;
         _direction.Text = hint?.Label ?? "";
         _kind.Text = hint?.Category ?? "字幕";
@@ -46,24 +50,4 @@ internal sealed class SubtitleWindow : Window
         _empty.Visibility = hint == null && string.IsNullOrWhiteSpace(text) ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    internal void VerifyLayoutAndCapture(string path)
-    {
-        UpdateLayout();
-        var root = (FrameworkElement)Content;
-        if (_header.IsVisible && (_direction.ActualHeight > _direction.FontSize * 1.8 || _kind.ActualHeight > _kind.FontSize * 1.8))
-            throw new InvalidOperationException("Direction or source label wraps into multiple lines.");
-        if (_captionHost.IsVisible && _subtitle.ActualWidth < root.ActualWidth - 48)
-            throw new InvalidOperationException("Subtitle does not use the full available width.");
-        if (!_captionHost.IsVisible && ActualHeight > 90)
-            throw new InvalidOperationException("Empty subtitle leaves an oversized floating window.");
-        var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)Math.Ceiling(root.ActualWidth),
-            (int)Math.Ceiling(root.ActualHeight), 96, 96, PixelFormats.Pbgra32);
-        var visual = new DrawingVisual();
-        using (var drawing = visual.RenderOpen())
-            drawing.DrawRectangle(new VisualBrush(root), null, new Rect(0, 0, root.ActualWidth, root.ActualHeight));
-        bitmap.Render(visual);
-        var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
-        encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
-        using var output = File.Create(path); encoder.Save(output);
-    }
 }

@@ -40,4 +40,4 @@
 dotnet run --project tests/GuideMate.Vision.Specs/GuideMate.Vision.Specs.csproj -c Release -- --endfield-frames artifacts/endfield-analysis --endfield-video D:/Downloads/02.mp4 --data-dir artifacts/endfield-analysis
 ```
 
-提供 5、30、60、120、180、240、300、360、400 秒处的 `endfield-时间.png` 抽帧。完整缓存生成后，以 `--smoke-test --endfield-vision-probe --data-dir 独立测试目录 --media D:/Downloads/02.mp4` 验证播放器、方向同步、校准窗口、取消及网页取帧。不得将测试目录保存为正式启动资料目录。
+提供 5、30、60、120、180、240、300、360、400 秒处的 `endfield-时间.png` 抽帧。完整缓存生成后，以 `--isolated --data-dir 独立测试目录 --media D:/Downloads/02.mp4` 人工验证播放器、方向同步、校准窗口、取消及网页取帧。不得将测试目录保存为正式启动资料目录。

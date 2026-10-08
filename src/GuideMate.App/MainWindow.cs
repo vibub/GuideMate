@@ -13,13 +13,8 @@ public sealed partial class MainWindow : Window
 {
     private const string MissingVideoNotice = "未找到可控制的 HTML5 视频。";
     private readonly string _dataPath;
-    private readonly bool _smoke;
+    private readonly bool _isolated;
     private readonly string? _initialMedia;
-    private readonly string? _profileProbe;
-    private readonly string? _episodeProbe;
-    private readonly bool _smallWindowProbe;
-    private readonly bool _onlineVisionProbe;
-    private readonly string? _onlineVisionLiveUrl;
     private readonly SettingsStore _store;
     private readonly AppSettings _settings;
     private readonly VisibleCursorWebView _browser = new();
@@ -72,13 +67,9 @@ public sealed partial class MainWindow : Window
     private bool _navigationRequested;
     private int _navigationVersion;
 
-    public MainWindow(string dataPath, bool smoke, string? initialMedia = null, string? profileProbe = null, string? episodeProbe = null, bool smallWindowProbe = false, bool onlineVisionProbe = false, string? onlineVisionLiveUrl = null, bool danmakuProbe = false, string? danmakuLiveUrl = null)
+    public MainWindow(string dataPath, bool isolated = false, string? initialMedia = null)
     {
-        _dataPath = dataPath; _smoke = smoke; _initialMedia = initialMedia; _profileProbe = profileProbe; _episodeProbe = episodeProbe;
-        _smallWindowProbe = smallWindowProbe;
-        _onlineVisionProbe = onlineVisionProbe;
-        _onlineVisionLiveUrl = onlineVisionLiveUrl;
-        _danmakuProbe = danmakuProbe; _danmakuLiveUrl = danmakuLiveUrl;
+        _dataPath = dataPath; _isolated = isolated; _initialMedia = initialMedia;
         _store = new(dataPath); _settings = _store.Load();
         // Preserve the ICO decoder so WPF selects the matching frame for each system icon size.
         Icon = System.Windows.Media.Imaging.BitmapFrame.Create(new Uri("pack://application:,,,/Assets/guidemate.ico"));
@@ -117,7 +108,7 @@ public sealed partial class MainWindow : Window
             CancelEdgeSeek(); StopXRayTracking();
             _closing = true; UpdateImmersiveControls(); _onlineVisionTimer.Stop(); InvalidateOnlineSample(); _saveTimer.Stop(); _fadeTimer.Stop(); UpdateHistory(); SaveSettings();
             _chromeServer?.Dispose();
-            _keys?.Dispose(); _tray?.Icon?.Dispose(); _tray?.Dispose(); _overlay?.Close(); _danmakuOverlay?.Close(); _browser.Dispose();
+            _keys?.Dispose(); _tray?.Icon?.Dispose(); _tray?.Dispose(); _overlay?.Close(); _danmakuOverlay?.Dispose(); _browser.Dispose();
         };
     }
 
@@ -344,21 +335,15 @@ public sealed partial class MainWindow : Window
             };
             core.NewWindowRequested += (_, e) => { e.Handled = true; Navigate(e.Uri); };
             await core.AddScriptToExecuteOnDocumentCreatedAsync(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "assets", "bridge.js")));
-            if (!_smoke) StartChromeBridge();
+            if (!_isolated) StartChromeBridge();
             _saveTimer.Start(); UpdateOverlay();
-            if (_smoke && _episodeProbe != null) Navigate(_episodeProbe);
-            else if (_smoke) OpenDemo();
-            else if (_initialMedia != null) NavigateMedia(_initialMedia);
+            if (_initialMedia != null) NavigateMedia(_initialMedia);
             else Navigate("https://www.bilibili.com/");
             if (_store.LoadWarning != null) _status.Text = _store.LoadWarning;
-            if (_smoke) _ = _danmakuProbe ? RunDanmakuProbeAsync() : _profileProbe != null ? RunProfileProbeAsync()
-                : _episodeProbe != null ? RunBilibiliEpisodeProbeAsync()
-                : _onlineVisionProbe ? RunOnlineVisionProbeAsync() : _smallWindowProbe ? RunSmallWindowProbeAsync() : RunSmokeTestAsync();
         }
         catch (Exception ex)
         {
             _status.Text = "浏览器启动失败：" + ex.Message;
-            if (_smoke) { WriteSmokeResult(false, ex.ToString(), []); Close(); }
         }
     }
 
@@ -714,201 +699,4 @@ public sealed partial class MainWindow : Window
         _tray.DoubleClick += (_, _) => Dispatcher.Invoke(EmergencyRestore);
     }
 
-    private async Task RunSmokeTestAsync()
-    {
-        var checks = new List<string>();
-        async Task WaitFor(Func<bool> condition, string description)
-        {
-            var end = DateTime.UtcNow.AddSeconds(25);
-            while (!condition()) { if (DateTime.UtcNow > end) throw new Exception("Timeout: " + description); await Task.Delay(100); }
-            checks.Add(description);
-        }
-        try
-        {
-            if (Environment.GetCommandLineArgs().Contains("--endfield-vision-probe"))
-            {
-                await WaitFor(() => _duration > 20, "initial sample page is loaded");
-                await VerifyEndfieldVisionAsync(checks);
-                WriteSmokeResult(true, "", checks); return;
-            }
-            Left = -50000; Top = -50000; Ui.PlaceVisible(this); await Task.Delay(150);
-            var titlePoint = PointToScreen(new Point(ActualWidth / 2, 20));
-            var screenPoint = new System.Drawing.Point((int)titlePoint.X, (int)titlePoint.Y);
-            if (!Forms.Screen.FromPoint(screenPoint).WorkingArea.Contains(screenPoint)) throw new Exception("Restored window title remains off-screen");
-            checks.Add("off-screen window is restored using physical monitor coordinates");
-            await WaitFor(() => _duration > 20 && _cues.Count > 0, "local HTML5 video and subtitle loaded");
-            await CommandAsync("pause"); await WaitFor(() => _paused, "pause");
-            await CommandAsync("position", 7); await WaitFor(() => Math.Abs(_position - 7) < 0.3, "seek to 7 seconds");
-            if (_direction.Text != "东北") throw new Exception("Expected northeast direction, got " + _direction.Text);
-            checks.Add("subtitle synchronizes to seek and northeast hint");
-            await SetRateAsync(1.5); await WaitFor(() => _rate.SelectedItem is double rate && Math.Abs(rate - 1.5) < 0.01, "playback rate");
-            await CommandAsync("play"); var start = _position;
-            await WaitFor(() => !_paused && _position > start + 0.5, "real video clock advances");
-            await CommandAsync("pause"); await WaitFor(() => _paused, "pause after playback");
-            var beforeReload = _navigationVersion;
-            _browser.CoreWebView2.Reload();
-            await WaitFor(() => _navigationVersion > beforeReload && _duration > 35 && _position > 6 && _rate.SelectedItem is double restored && restored == 1.5, "reload restores time and rate");
-            AddBookmark(); SaveSettings();
-            if (_store.Load().Bookmarks.Count == 0) throw new Exception("Bookmark not saved"); checks.Add("bookmark persistence");
-            _hole = true; UpdateClip();
-            if (_root.Clip?.FillContains(new Point(_root.ActualWidth / 2, _root.ActualHeight / 2)) != false) throw new Exception("Hole not clipped");
-            checks.Add("hole excludes center"); _hole = false; UpdateClip();
-            if (_keys?.EmergencyAvailable == true)
-            {
-                SetClickThrough(true); if (!NativeHotkeys.IsClickThrough(this)) throw new Exception("Click-through flag missing");
-                EmergencyRestore(); if (NativeHotkeys.IsClickThrough(this)) throw new Exception("Recovery did not clear click-through");
-                checks.Add("native click-through and emergency restore");
-            }
-            await VerifyTopmostAsync(checks);
-            await VerifyWindowCommandsAsync(checks);
-            await VerifyWindowSwitcherAsync(checks);
-            await VerifyImmersiveDragAsync(checks);
-            await VerifySmallWindowAsync(checks);
-            await VerifyImmersiveFeedbackAsync(checks);
-            await VerifyCursorAsync(checks);
-            await _browser.CoreWebView2.ExecuteScriptAsync("document.querySelector('video').style.cursor = 'none'");
-            ToggleImmersive(); await Task.Delay(500);
-            if (ActualWidth > 700 || _root.RowDefinitions[0].Height.Value != 0) throw new Exception("Immersive layout failed");
-            var focusedCursor = await _browser.CoreWebView2.ExecuteScriptAsync("getComputedStyle(document.querySelector('video')).cursor");
-            if (!_workspace.ForceCursor || _workspace.Cursor != Cursors.Arrow || focusedCursor != "\"default\"") throw new Exception("Immersive cursor was hidden: " + focusedCursor);
-            checks.Add("immersive keeps arrow cursor despite player cursor:none");
-            await VerifyImmersiveControlsAsync(checks);
-            var layout = new { window = new { ActualWidth, ActualHeight }, browser = new { _browser.ActualWidth, _browser.ActualHeight, _browser.IsVisible }, workspace = new { _workspace.ActualWidth, _workspace.ActualHeight } };
-            File.WriteAllText(Path.Combine(_dataPath, "immersive-layout.json"), JsonSerializer.Serialize(layout));
-            await using (var preview = File.Create(Path.Combine(_dataPath, "immersive-preview.png")))
-                await _browser.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, preview);
-            if (_browser.ActualWidth < 300 || _browser.ActualHeight < 150) throw new Exception("Immersive browser has no layout area");
-            ToggleImmersive(); checks.Add("immersive and normal layout");
-            if (_workspace.ForceCursor) throw new Exception("Normal mode still forces cursor");
-            var normalCursor = await _browser.CoreWebView2.ExecuteScriptAsync("getComputedStyle(document.querySelector('video')).cursor");
-            if (normalCursor != "\"none\"") throw new Exception("Focus off did not restore original cursor policy");
-            await _browser.CoreWebView2.ExecuteScriptAsync("document.querySelector('video').style.removeProperty('cursor')");
-            checks.Add("normal mode restores page cursor CSS while native hidden-cursor protection remains active");
-            _settings.SubtitleOverlay = true; UpdateOverlay(); checks.Add("subtitle overlay opened");
-            _settings.PauseOnCombat = true; _settings.FadeOnCombat = true;
-            await CommandAsync("position", 19.5);
-            await WaitFor(() => Math.Abs(_position - 19.5) < 0.2, "seek before combat cue");
-            await CommandAsync("play");
-            await WaitFor(() => _position >= 20 && _paused && _faded, "subtitle combat pause and fade");
-            _settings.PauseOnCombat = false; _settings.FadeOnCombat = false; EmergencyRestore();
-            NavigateMedia(Path.Combine(AppContext.BaseDirectory, "assets", "demo.webm"));
-            await WaitFor(() => _url.Contains("guidemate.local/local.html") && _duration > 35, "selected local media plays through restricted resource handler");
-            if (_cues.Count != 0) throw new Exception("Old subtitles leaked to local media"); checks.Add("video change clears subtitles");
-            await CommandAsync("pause"); await WaitFor(() => _paused, "local media pause");
-            await CommandAsync("position", 12); await WaitFor(() => Math.Abs(_position - 12) < 0.2, "local media seek");
-            AddBookmark();
-            if (_store.Load().Bookmarks.All(v => v.LocalPath == null)) throw new Exception("Local bookmark path missing"); checks.Add("local bookmark persistence");
-            var localBookmark = _store.Load().Bookmarks.First(v => v.LocalPath != null);
-            OpenDemo(); await WaitFor(() => _url.Contains("/demo.html") && _cues.Count > 0, "navigate away from local media");
-            NavigateSaved(localBookmark);
-            await WaitFor(() => _url.Contains("/local.html") && Math.Abs(_position - 12) < 0.2 && _localFile == localBookmark.LocalPath, "local bookmark reopens file and position");
-            await _browser.CoreWebView2.ExecuteScriptAsync("""
-                window.guideMateMediaProbe = null;
-                (async () => {
-                  const url = 'https://media.guidemate.local/video';
-                  const partial = await fetch(url, {headers: {'Range': 'bytes=0-15'}});
-                  const data = new Uint8Array(await partial.arrayBuffer());
-                  const head = await fetch(url, {method: 'HEAD'});
-                  const invalid = await fetch(url, {headers: {'Range': 'bytes=999999999-'}});
-                  window.guideMateMediaProbe = {partial: partial.status, length: data.length, magic: [...data.slice(0, 4)], head: head.status, invalid: invalid.status};
-                })().catch(error => { window.guideMateMediaProbe = {error: error.message}; });
-                """);
-            var probe = "null";
-            for (var attempt = 0; attempt < 50 && probe == "null"; attempt++)
-            { await Task.Delay(100); probe = await _browser.CoreWebView2.ExecuteScriptAsync("window.guideMateMediaProbe"); }
-            using (var parsed = JsonDocument.Parse(probe))
-            {
-                var result = parsed.RootElement;
-                if (result.ValueKind != JsonValueKind.Object || result.TryGetProperty("error", out _)
-                    || result.GetProperty("partial").GetInt32() != 206 || result.GetProperty("length").GetInt32() != 16
-                    || result.GetProperty("head").GetInt32() != 200 || result.GetProperty("invalid").GetInt32() != 416
-                    || result.GetProperty("magic")[0].GetInt32() != 0x1A) throw new Exception("Local media Range/HEAD probe failed: " + probe);
-            }
-            checks.Add("local media HTTP 206 byte range, HEAD and 416 invalid range");
-            await SetRateAsync(1.5); _settings.TemporaryRate = 3;
-            await StartTemporaryRateAsync();
-            await WaitFor(() => _rate.SelectedItem is double boosted && boosted == 3, "temporary speed applies to real video");
-            if (_settings.Rate != 1.5 || CurrentVideo().Rate != 1.5) throw new Exception("Temporary speed overwrote saved base rate");
-            checks.Add("temporary speed preserves saved base rate");
-            await EndTemporaryRateAsync();
-            await WaitFor(() => _rate.SelectedItem is double normal && normal == 1.5, "temporary speed restores after release");
-            await StartTemporaryRateAsync(); EmergencyRestore();
-            await WaitFor(() => !_temporaryRateActive && _rate.SelectedItem is double normal && normal == 1.5, "emergency restores temporary speed");
-            Navigate("https://guidemate.local/iframe-test.html");
-            await WaitFor(() => _url.Contains("iframe-test") && _duration > 35 && _videoRouter!.ActiveFrame != 0, "cross-origin iframe video discovered");
-            await CommandAsync("pause"); await CommandAsync("position", 9);
-            await WaitFor(() => _paused && Math.Abs(_position - 9) < 0.2, "cross-origin iframe pause and seek routed");
-            ToggleImmersive(); await Task.Delay(700);
-            var iframeFocus = await _browser.CoreWebView2.ExecuteScriptAsync("document.querySelector('#player').hasAttribute('data-guidemate-target') && document.querySelector('#player').getBoundingClientRect().width >= innerWidth-2");
-            if (iframeFocus != "true") throw new Exception("Iframe did not expand for immersive mode: " + iframeFocus);
-            checks.Add("cross-origin immersive expands parent iframe");
-            await Task.Delay(2100);
-            if (await _videoRouter!.ExecuteAsync("!document.querySelector('video').controls") != "true") throw new Exception("Iframe native controls did not auto-hide");
-            checks.Add("cross-origin immersive also auto-hides native controls");
-            ToggleImmersive(); await Task.Delay(400);
-            if (await _videoRouter.ExecuteAsync("document.querySelector('video').controls") != "true") throw new Exception("Iframe controls not restored after immersive");
-            checks.Add("cross-origin controls restore after immersive exit");
-            var frameVisibility = await _videoRouter!.ExecuteAsync("document.querySelector('video').getBoundingClientRect().width");
-            if (!double.TryParse(frameVisibility, CultureInfo.InvariantCulture, out var frameWidth) || frameWidth < 300) throw new Exception("Iframe layout missing");
-            Navigate("https://guidemate.local/iframe-test.html?nested=1");
-            await WaitFor(() => _url.Contains("nested") && _duration > 35 && _videoRouter.ActiveFrame != 0, "nested cross-origin iframe discovered");
-            await CommandAsync("position", 13);
-            await WaitFor(() => Math.Abs(_position - 13) < 0.2, "nested iframe controls routed");
-            await _browser.CoreWebView2.ExecuteScriptAsync("document.querySelector('#player').remove()");
-            await WaitFor(() => _duration == 0, "removed iframe stops stale state and hidden iframe is ignored");
-            Navigate("https://guidemate.local/episodes-test.html");
-            await WaitFor(() => _url.Contains("episodes-test") && _duration > 35, "episode fixture loaded");
-            LoadSubtitles(Path.Combine(AppContext.BaseDirectory, "assets", "demo.srt"));
-            await CommandAsync("position", 10); await CommandAsync("nextEpisode");
-            await WaitFor(() => _url.Contains("episode=2") && _position < 1 && _cues.Count == 0, "next episode resets time and imported subtitles");
-            await CommandAsync("previousEpisode");
-            await WaitFor(() => _url.Contains("episode=1"), "previous episode works");
-            await CommandAsync("previousEpisode");
-            if (!_notice.Contains("上一集")) throw new Exception("Missing episode boundary feedback");
-            checks.Add("episode boundaries report unavailable command");
-            await VerifyBilibiliEpisodesAsync(checks);
-            var cookieName = "GuideMate_Synthetic_" + Guid.NewGuid().ToString("N");
-            var cookieResult = await ImportCookiesAsync([new() { Name = cookieName, Value = "test-only", Domain = "www.bilibili.com", Path = "/", Session = true, Secure = true, HttpOnly = true, SameSite = "strict" }]);
-            var importedCookie = (await _browser.CoreWebView2.CookieManager.GetCookiesAsync("https://www.bilibili.com/")).SingleOrDefault(c => c.Name == cookieName);
-            if (!cookieResult.Success || importedCookie is not { IsHttpOnly: true, IsSecure: true, IsSession: true, SameSite: CoreWebView2CookieSameSiteKind.Strict }) throw new Exception("Synthetic cookie attributes were not imported");
-            _browser.CoreWebView2.CookieManager.DeleteCookie(importedCookie);
-            checks.Add("synthetic cookie import preserves secure httponly session and samesite");
-            var expires = DateTimeOffset.UtcNow.AddHours(1);
-            var persistentResult = await ImportCookiesAsync([new() { Name = cookieName, Value = "test-only", Domain = "www.bilibili.com", Path = "/guidemate-test", Session = false,
-                Secure = true, HttpOnly = false, SameSite = "no_restriction", ExpirationDate = expires.ToUnixTimeSeconds() }]);
-            var persistentCookie = (await _browser.CoreWebView2.CookieManager.GetCookiesAsync("https://www.bilibili.com/guidemate-test")).SingleOrDefault(c => c.Name == cookieName);
-            if (!persistentResult.Success || persistentCookie is not { IsSession: false, IsSecure: true, SameSite: CoreWebView2CookieSameSiteKind.None }
-                || Math.Abs((persistentCookie.Expires - expires.UtcDateTime).TotalSeconds) > 2) throw new Exception("Persistent cookie expiry or SameSite None changed");
-            _browser.CoreWebView2.CookieManager.DeleteCookie(persistentCookie);
-            checks.Add("synthetic persistent cookie preserves expiry path and samesite none");
-            await VerifyChromeHostAsync(checks);
-            if (_keys != null)
-            {
-                if (NativeHotkeys.Format(Key.K, ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Shift) != "Ctrl+Alt+Shift+K"
-                    || NativeHotkeys.Format(Key.D3, ModifierKeys.Control | ModifierKeys.Shift) != "Ctrl+Shift+3"
-                    || NativeHotkeys.Parse("Ctrl+Shift+3").Key != KeyInterop.VirtualKeyFromKey(Key.D3)) throw new Exception("Recorded key format is incorrect");
-                checks.Add("recorded modifiers and numeric keys roundtrip");
-                _keys.SuspendOrdinaryBindings();
-                if (!_keys.OrdinaryBindingsSuspended) throw new Exception("Ordinary bindings were not suspended");
-                var restoreError = _keys.ResumeOrdinaryBindings();
-                if (restoreError != null || _keys.OrdinaryBindingsSuspended) throw new Exception("Ordinary bindings were not restored: " + restoreError);
-                checks.Add("ordinary hotkeys suspend and restore for recording");
-                var duplicate = new Dictionary<string, string>(_settings.Hotkeys) { ["SeekBack"] = _settings.Hotkeys["PlayPause"] };
-                if (_keys.Apply(duplicate) == null) throw new Exception("Duplicate hotkey was accepted");
-                checks.Add("duplicate hotkey rejected without replacing active bindings");
-            }
-            if (_initialMedia != null) await VerifyVisionAsync(checks);
-            await VerifyMouseHotkeysAsync(checks);
-            await using (var stream = File.Create(Path.Combine(_dataPath, "browser-preview.png")))
-                await _browser.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, stream);
-            WriteSmokeResult(true, "", checks);
-        }
-        catch (Exception ex) { WriteSmokeResult(false, ex.ToString(), checks); }
-        finally { Close(); }
-    }
-    private void WriteSmokeResult(bool success, string error, List<string> checks)
-    {
-        Directory.CreateDirectory(_dataPath);
-        File.WriteAllText(Path.Combine(_dataPath, "smoke-result.json"), JsonSerializer.Serialize(new { success, error, checks, runtime = Environment.Version.ToString(), time = DateTime.Now }, new JsonSerializerOptions { WriteIndented = true }));
-    }
 }

@@ -98,7 +98,7 @@ B 站当前视频选集优先识别 `.video-pod__list .video-pod__item`，按 DO
 
 B 站列表不再按布局高度过滤：列表折叠、响应式隐藏或沉浸聚焦时仍有有效的选集节点，隐藏不应让热键失效。新版页面的每个条目均含 playing-gif（未播放项隐藏该图标），不能仅凭图标存在判定当前集；本实现使用条目的当前类。已找到当前列表时首尾直接返回不可用，不再回退点击无关 rel 链接。YouTube 和通用入口的原可见性策略保持不变。
 
-隔离冒烟在专用测试虚拟主机验证 B 站域名分支的新版/旧版结构、隐藏列表、沉浸切换、边界与禁用项。虚拟主机仅在该测试方法注册，不在正式启动截获 B 站域名。另有显式在线探针：`--smoke-test --bilibili-episode-probe https://www.bilibili.com/video/BV14Z421L7DN/?p=2 --data-dir 隔离目录`，只用隔离资料访问真实网页，验证普通和沉浸各一次下一集/上一集的选中项与 p 参数，保存 DOM 状态和结果后退出；正常启动不会启用它或改变正式资料选择。
+历史桌面冒烟与在线探针已移除；现在通过 --isolated 使用独立资料人工核对真实 B 站的选中项、p 参数及视频变化。核心字幕、热键、Chrome 和弹幕模型回归仍独立保留。
 
 ### 5.3 本地媒体与样例
 
@@ -188,7 +188,7 @@ Web 状态以约 250 ms 周期传送，不在 UI 线程执行重识别。用户�
 
 配置存于 %LOCALAPPDATA%/GuideMate/settings.json；浏览器数据存于该目录 WebView2 子目录。收藏保存标题、网址、播放秒数、倍速与可空 LocalPath，本地收藏通过磁盘路径重开文件；路径失效时提示用户。历史最多 80 条，每 12 秒及导航/退出时保存进度。同页刷新恢复播放位置和倍速，切换视频清空导入字幕。先写临时文件再替换配置，避免中断产生半文件。无效 JSON 保留原文件，下一次保存前复制为 .invalid-时间戳，再使用默认配置。正常隐藏不退出播放器，退出时保存并注销热键和托盘。
 
-上述为未选择其他目录时的默认位置。正常启动显式传入 --data-dir 后，以 active-profile.json 在默认根目录记住绝对路径；以后的启动和发布版沿用该选择，不把临时演示目录误当新资料。已有自定义设置及浏览器资料继续原地使用，不迁移或合并 WebView2 数据。记录缺失时使用默认根目录；记录无效或选定目录缺失时停止并提示，不静默回退到空资料。--smoke-test 不读取/更新正式选择，未指定目录时分配新的临时目录。
+上述为未选择其他目录时的默认位置。正常启动显式传入 --data-dir 后，以 active-profile.json 在默认根目录记住绝对路径；以后的启动和发布版沿用该选择，不把临时演示目录误当新资料。已有自定义设置及浏览器资料继续原地使用，不迁移或合并 WebView2 数据。记录缺失时使用默认根目录；记录无效或选定目录缺失时停止并提示，不静默回退到空资料。--isolated 不读取/更新正式选择，未指定目录时分配新的临时目录。
 
 WebView2 明确使用所选目录下的 WebView2 子目录作为 UserDataFolder；修改程序位置或更新程序集不改变它。发布脚本只复制二进制和资源，不覆盖用户目录；已在运行的发布程序会阻止发布，要求正常退出以保存设置。跨程序目录的持久性验证仅使用隔离资料中的合成持久 Cookie、LocalStorage 与自定义热键，不读取真实账号。保留本地资料不保证网站会话永不过期。
 
@@ -214,7 +214,7 @@ VideoAnalysis 使用已安装 FFmpeg/ffprobe，以 ArgumentList 传参，不经�
 
 ## 11. 构建、发布与验证
 
-开发环境：.NET 10 SDK、WebView2 Runtime；NuGet 固定 WebView2、OpenCvSharp4 和 runtime.win 4.13.0.20260627。OpenCV native DLL 随发布包提供；本地分析使用已有 FFmpeg/ffprobe，没有新增系统 SDK。升级后重新验证透明视频绘制与真实图像。脚本优先使用项目 .tools/dotnet/dotnet.exe，找不到时检查系统 SDK。
+开发环境：.NET 10 SDK、WebView2 Runtime；NuGet 固定 WebView2、OpenCvSharp4 和 runtime.win.slim 4.13.0.20260627。OpenCV native DLL 随发布包提供；本地分析使用已有 FFmpeg/ffprobe，没有新增系统 SDK。升级后重新验证透明视频绘制与真实图像。脚本优先使用项目 .tools/dotnet/dotnet.exe，找不到时检查系统 SDK。
 
 发布命令生成 artifacts/GuideMate-win-x64 自包含目录。提供 Start-GuideMate.ps1 和双击入口，不把源码包描述为已安装应用。
 
@@ -224,7 +224,7 @@ VideoAnalysis 使用已安装 FFmpeg/ffprobe，以 ArgumentList 传参，不经�
 
 已验证：Release 构建零警告零错误、41 项核心检查、54 项视觉检查、56 项发布包桌面集成检查，以及扩展过滤与固定身份检查。新增回归包含实际 AV1 攻略的源身份、暂停/跳转/切换/开关，以及校准预览和最小尺寸布局。2388 点中 1826 帧检出，覆盖率约 76.5%，不等于准确率。新结果见 artifacts/genshin-analysis；原有 48 项仍保留在 artifacts/smoke-remaining-final。本轮不据本地夹具或攻略视频宣称真实原神和所有站点均已验证。
 
-正常启动以 B 站首页 https://www.bilibili.com/ 作为首屏，并未自动恢复启动前的最后一个网页。收藏和历史从磁盘载入，用户重新打开条目时恢复记录的进度和倍速。离线样例保留为侧栏入口；--smoke-test 使用离线样例，不依赖外部网络进行核心回归。浏览器数据仍独立，Chrome B 站会话仅在扩展接入、配对和用户明确确认后导入，详见 [CHROME_SYNC.md](CHROME_SYNC.md)。不是自动复用整个 Chrome 配置。
+正常启动以 B 站首页 https://www.bilibili.com/ 作为首屏，并未自动恢复启动前的最后一个网页。收藏和历史从磁盘载入，用户重新打开条目时恢复记录的进度和倍速。离线样例保留为侧栏入口；--isolated 只隔离资料，核心回归由 tests 中的独立程序执行。浏览器数据仍独立，Chrome B 站会话仅在扩展接入、配对和用户明确确认后导入，详见 [CHROME_SYNC.md](CHROME_SYNC.md)。不是自动复用整个 Chrome 配置。
 
 ## 12. 兼容性与交付边界
 
@@ -256,3 +256,5 @@ VideoAnalysis 使用已安装 FFmpeg/ffprobe，以 ArgumentList 传参，不经�
 桥接读取当前 B 站 nano 播放器的 player.danmaku.getDanmakuX().manager.visualArray。使用已通过播放器筛选、未隐藏且已显示的 textData，保留普通滚动、顶部、底部、反向文字的内容与颜色；不下载弹幕接口、不读取 Cookie、不触发发送请求。用 dmid 和 stime 去重，seeking 事件推进代次。每批最多 240 条，屏幕最多 120 条，按轨道避免重叠；不支持高级脚本或特效的原有动画。播放器未暴露该结构时不创建弹幕层。
 
 适配依据为 2026-10-08 读取的 B 站公开播放器 nano 4.10.4（构建时间 2026-09-20）：core.js 暴露 getDanmakuX，npd.491.8e830665.js 管理 visualArray / textData / isHide / showed，npd.505.2d76eed1.js 配置弹幕筛选并将实例挂到播放器。以上内部结构可能随网站更新而改变，真实站点验收需独立于合成模型检查。
+
+全屏弹幕在独立绘制进程的 STA 线程创建窗口与更新字形位图，不在主 UI 线程逐帧绘制；待处理状态合并为最新快照，隐藏或退出时停止绘制。同屏拖动不会重置弹幕时钟。发布使用同版本 OpenCV Slim 原生运行库；图像处理流程保持一致，FFmpeg 离线解码继续使用外部工具。
