@@ -25,6 +25,6 @@ foreach ($name in @('Start-GuideMate.cmd', 'README.md', 'LICENSE', 'THIRD_PARTY_
 }
 $documentDirectory = Join-Path $publishDirectory 'docs'
 New-Item -ItemType Directory -Path $documentDirectory -Force | Out-Null
-foreach ($name in @('CHROME_SYNC.md', 'GENSHIN.md', 'IMPLEMENTATION.md', 'TESTING.md')) {
+foreach ($name in @('CHROME_SYNC.md', 'GENSHIN.md', 'ENDFIELD.md', 'IMPLEMENTATION.md', 'TESTING.md')) {
     Copy-Item -LiteralPath (Join-Path $projectRoot "docs\$name") -Destination $documentDirectory -Force
 }

@@ -93,6 +93,19 @@ Check(recentCalibration.OnlineVisionCalibration == calibration && recentCalibrat
 recentCalibration.OnlineVisionCalibration = calibration with { Region = new(0.3, 0.3, 0.1, 0.17777777777777778) };
 store.Save(recentCalibration);
 Check(store.Load().OnlineVisionCalibration == recentCalibration.OnlineVisionCalibration, "manual recalibration replaces persistent region and is retained after restart");
+var endfieldProfile = calibration with { Game = VisionGame.Endfield };
+recentCalibration.OnlineVisionCalibration = endfieldProfile;
+recentCalibration.Hotkeys["Hide"] = "Ctrl+Shift+H";
+recentCalibration.Bookmarks.Add(new() { Url = "https://example.com/saved", Position = 42 });
+store.Save(recentCalibration);
+var endfieldReload = store.Load();
+Check(endfieldReload.OnlineVisionCalibration == endfieldProfile && endfieldReload.Hotkeys["Hide"] == "Ctrl+Shift+H"
+    && endfieldReload.Bookmarks[0].Position == 42 && endfieldReload.OnlineVisionProfiles.Count == 2,
+    "Endfield calibration persists without resetting older selections, hotkeys or bookmarks");
+var oldOnline = System.Text.Json.JsonSerializer.Deserialize<OnlineVisionProfile>("{\"Width\":1920,\"Height\":1080,\"Region\":{\"X\":0.1,\"Y\":0.2,\"Width\":0.1,\"Height\":0.1},\"NorthLocked\":true,\"NorthAngle\":27}");
+Check(oldOnline?.Game == VisionGame.Genshin && oldOnline.NorthAngle == 27, "old online profiles default to Genshin and retain north angle");
+Check(System.Text.Json.JsonSerializer.Deserialize<VisualDirectionTrack>("{}")!.Game == VisionGame.Genshin,
+    "old local direction tracks retain Genshin recognition");
 Directory.Delete(temp, true);
 Check(ChromeBridge.IsAllowedDomain(".bilibili.com") && ChromeBridge.IsAllowedDomain("passport.bilibili.com"), "Bilibili cookie domain scope");
 Check(!ChromeBridge.IsAllowedDomain("bilibili.com.attacker.test") && !ChromeBridge.IsAllowedDomain("evilbilibili.com")

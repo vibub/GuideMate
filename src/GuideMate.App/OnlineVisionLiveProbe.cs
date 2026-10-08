@@ -24,6 +24,7 @@ public sealed partial class MainWindow
             await Wait(() => _videoWidth > 0 && _videoHeight > 0 && _duration > 300,
                 "live Bilibili guide loaded using isolated browser data");
             await SetRateAsync(1); await CommandAsync("pause");
+            var game = _onlineVisionLiveUrl!.Contains("BV1erdJBHE5v", StringComparison.OrdinalIgnoreCase) ? VisionGame.Endfield : VisionGame.Genshin;
             foreach (var time in new[] { 60d, 300d })
             {
                 await CommandAsync("position", time);
@@ -34,7 +35,7 @@ public sealed partial class MainWindow
                 if (frame == null) throw new Exception("Live frame is unavailable");
                 File.WriteAllBytes(Path.Combine(_dataPath, $"live-online-frame-{time:0}.png"), frame.Image);
                 var profile = new OnlineVisionProfile(frame.Width, frame.Height,
-                    new ArrowRegion(210 / 1920d, 205 / 1080d, 140 / 1920d, 140 / 1080d), true, 0);
+                    new ArrowRegion(210 / 1920d, 205 / 1080d, 140 / 1920d, 140 / 1080d), true, 0, game);
                 ApplyOnlineCalibration(profile);
                 await Wait(() => _onlineHint != null && Math.Abs(_onlineTime - _position) < 0.5,
                     "live guide minimap arrow detected at " + time);
@@ -57,6 +58,8 @@ public sealed partial class MainWindow
         }
         finally
         {
+            await using (var preview = File.Create(Path.Combine(_dataPath, "live-online-page.png")))
+                await _browser.CoreWebView2.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png, preview);
             File.WriteAllText(Path.Combine(_dataPath, "live-online-samples.json"), JsonSerializer.Serialize(samples, new JsonSerializerOptions { WriteIndented = true }));
             Close();
         }

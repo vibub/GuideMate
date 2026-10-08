@@ -23,7 +23,8 @@ public sealed partial class MainWindow
     private FrameworkElement BuildVisionPanel()
     {
         var panel = new StackPanel { Margin = new(16, 0, 16, 12) };
-        panel.Children.Add(Ui.Heading("原神攻略画面"));
+        panel.Children.Add(Ui.Heading("攻略画面方向"));
+        panel.Children.Add(Ui.Text("校准时选择原神或终末地，框选玩家箭头。", 12, Ui.Muted));
         panel.Children.Add(_visionSummary);
         panel.Children.Add(Ui.Command("\uE9D9", "校准并分析本地视频", OpenVisionAnalysis));
         panel.Children.Add(Ui.Command("\uE714", "校准在线视频", OpenOnlineCalibration));
@@ -56,7 +57,9 @@ public sealed partial class MainWindow
             _settings.FfmpegPath = ffmpeg;
             var source = _localFile;
             await CommandAsync("pause");
-            var dialog = new VisionCalibrationWindow(this, ffmpeg, source, _position);
+            var previous = _visualTrack is { } track
+                ? new OnlineVisionProfile(0, 0, track.Region, track.NorthLocked, track.NorthAngle, track.Game) : null;
+            var dialog = new VisionCalibrationWindow(this, ffmpeg, source, _position, onlineProfile: previous);
             if (dialog.ShowDialog() != true || dialog.Result == null) return;
             VisualDirectionCache.Save(_dataPath, dialog.Result);
             if (!string.Equals(_localFile, source, StringComparison.OrdinalIgnoreCase)) return;
@@ -76,10 +79,12 @@ public sealed partial class MainWindow
         UpdateVisionSummary(); UpdateDirection();
     }
 
+    private static string GameLabel(VisionGame game) => game == VisionGame.Endfield ? "终末地" : "原神";
+
     private void UpdateVisionSummary() => _visionSummary.Text = _onlineProfile != null
-        ? "在线视频已校准 · 随播放实时识别\n" + (_onlineProfile.NorthLocked ? "固定北向地图" : "画面角度 · 非绝对方位")
+        ? GameLabel(_onlineProfile.Game) + " · 在线视频已校准 · 随播放实时识别\n" + (_onlineProfile.NorthLocked ? "固定北向地图" : "画面角度 · 非绝对方位")
         : _visualTrack == null ? "未加载视觉方向"
-        : $"{Path.GetFileName(_visualTrack.SourcePath)}\n识别帧 {_visualTrack.Frames.Count(f => f.Angle != null)}/{_visualTrack.Frames.Count} · 间隔 {_visualTrack.Interval:0.0} 秒\n"
+        : $"{GameLabel(_visualTrack.Game)} · {Path.GetFileName(_visualTrack.SourcePath)}\n识别帧 {_visualTrack.Frames.Count(f => f.Angle != null)}/{_visualTrack.Frames.Count} · 间隔 {_visualTrack.Interval:0.0} 秒\n"
             + (_visualTrack.NorthLocked ? "固定北向地图" : "画面角度 · 非绝对方位");
 
     private DirectionHint? CurrentDirection()
@@ -174,11 +179,11 @@ public sealed partial class MainWindow
             var detection = await Task.Run(() =>
             {
                 using var image = Cv.Cv2.ImDecode(frame.Image, Cv.ImreadModes.Color);
-                return ArrowDetector.Detect(image, lowResolution: frame.DetailPixels < 60);
+                return ArrowDetector.Detect(image, lowResolution: frame.DetailPixels < 60, game: profile.Game);
             });
             if (generation != _onlineGeneration || key != _mediaKey || activeFrame != _videoRouter.ActiveFrame || _closing
                 || !IsVisible || WindowState == WindowState.Minimized) return;
-            var track = new VisualDirectionTrack { NorthLocked = profile.NorthLocked, NorthAngle = profile.NorthAngle,
+            var track = new VisualDirectionTrack { Game = profile.Game, NorthLocked = profile.NorthLocked, NorthAngle = profile.NorthAngle,
                 Frames = [new(frame.Time, detection?.Angle, detection?.Score ?? 0)] };
             _onlineHint = track.HintAt(frame.Time) is { } hint ? hint with { Category = "攻略箭头 · 在线视觉" } : null;
             _onlineTime = frame.Time; _onlineSampleTick = Environment.TickCount64; _onlineMethod = frame.Method;

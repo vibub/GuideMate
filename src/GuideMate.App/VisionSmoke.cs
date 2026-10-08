@@ -6,6 +6,8 @@ public sealed partial class MainWindow
 {
     private async Task VerifyVisionAsync(List<string> checks)
     {
+        if (VisualDirectionCache.Load(_dataPath, _initialMedia!)?.Game == VisionGame.Endfield)
+        { await VerifyEndfieldVisionAsync(checks); return; }
         async Task Wait(Func<bool> condition, string label)
         {
             var deadline = DateTime.UtcNow.AddSeconds(20);

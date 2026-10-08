@@ -7,8 +7,9 @@ public record ArrowDetection(double Angle, double Score);
 
 public static class ArrowDetector
 {
-    public static ArrowDetection? Detect(Mat bgr, bool lowResolution = false)
+    public static ArrowDetection? Detect(Mat bgr, bool lowResolution = false, VisionGame game = VisionGame.Genshin)
     {
+        if (game == VisionGame.Endfield) return EndfieldArrowDetector.Detect(bgr);
         using var hsv = new Mat();
         using var mask = new Mat();
         Cv2.CvtColor(bgr, hsv, ColorConversionCodes.BGR2HSV);

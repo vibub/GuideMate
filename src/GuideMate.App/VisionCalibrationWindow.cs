@@ -21,6 +21,8 @@ internal sealed class VisionCalibrationWindow : Window
     private readonly TextBlock _clock = Ui.Text("", 12, Ui.Muted);
     private readonly CheckBox _northLocked = Ui.Toggle("地图北向固定", true, _ => { });
     private readonly TextBox _northAngle = new() { Text = "0", Width = 64 };
+    private readonly ComboBox _game = new() { Width = 122, Margin = new(8, 0, 14, 0) };
+    private VisionGame Game => (VisionGame)Math.Max(0, _game.SelectedIndex);
     private readonly ComboBox _preset = new() { Width = 154 };
     private readonly ProgressBar _progress = new() { Height = 5, Minimum = 0, Maximum = 100 };
     private readonly Button _analyze;
@@ -37,13 +39,14 @@ internal sealed class VisionCalibrationWindow : Window
     public OnlineVisionProfile? OnlineResult { get; private set; }
     internal bool PreviewReady => _preview.Source != null && !_loading;
     internal double? PreviewAngle { get; private set; }
+    internal void SelectGame(VisionGame game) => _game.SelectedIndex = (int)game;
 
     public VisionCalibrationWindow(Window owner, string ffmpeg, string path, double startTime,
-        OnlineVideoFrame? onlineFrame = null, OnlineVisionProfile? onlineProfile = null)
+        OnlineVideoFrame? onlineFrame = null, OnlineVisionProfile? onlineProfile = null, VisionGame game = VisionGame.Genshin)
     {
         Owner = owner; _ffmpeg = ffmpeg; _path = path; _startTime = startTime;
         _onlineFrame = onlineFrame;
-        Title = onlineFrame == null ? "随引 · 原神攻略视觉校准" : "随引 · 在线视频视觉校准";
+        Title = onlineFrame == null ? "随引 · 本地视频视觉校准" : "随引 · 在线视频视觉校准";
         Width = 1000; Height = 760; MinWidth = 680; MinHeight = 520;
         WindowStartupLocation = WindowStartupLocation.CenterOwner; Background = Brushes.White;
         var root = new Grid { Margin = new(16), Background = Brushes.White };
@@ -61,8 +64,10 @@ internal sealed class VisionCalibrationWindow : Window
         if (onlineFrame != null) seek.Visibility = Visibility.Collapsed;
         _time.ValueChanged += (_, _) => _clock.Text = TimeSpan.FromSeconds(_time.Value).ToString(@"mm\:ss");
         var controls = new WrapPanel { Margin = new(0, 10, 0, 4) };
+        controls.Children.Add(Ui.Text("游戏", 12));
+        _game.Items.Add("原神"); _game.Items.Add("终末地"); controls.Children.Add(_game);
+        _game.ToolTip = "选择当前攻略的游戏，保存校准后生效";
         controls.Children.Add(Ui.Text("箭头区域", 12)); _preset.Margin = new(8, 0, 14, 0);
-        foreach (var label in new[] { "作者放大小地图", "原始游戏小地图", "手动选区" }) _preset.Items.Add(label);
         _preset.ToolTip = "在画面中拖动框选玩家箭头，选区需保留四周边距";
         controls.Children.Add(_preset); controls.Children.Add(_northLocked);
         controls.Children.Add(new TextBlock { Text = "北向角度", Margin = new(12, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center });
@@ -70,6 +75,17 @@ internal sealed class VisionCalibrationWindow : Window
         _coordinates.Margin = new(12, 0, 0, 0); controls.Children.Add(_coordinates);
         Grid.SetRow(controls, 3); root.Children.Add(controls);
         _preset.SelectionChanged += (_, _) => ApplyPreset();
+        _game.SelectionChanged += (_, _) =>
+        {
+            var manual = _preset.SelectedItem as string == "手动选区";
+            _preset.Items.Clear();
+            foreach (var label in Game == VisionGame.Endfield
+                ? new[] { "月月放大小地图", "手动选区" }
+                : new[] { "作者放大小地图", "原始游戏小地图", "手动选区" }) _preset.Items.Add(label);
+            _preset.SelectedItem = manual ? "手动选区" : (string)_preset.Items[0];
+            DetectPreview();
+        };
+        _game.SelectedIndex = (int)(onlineProfile?.Game ?? game);
         _northLocked.Checked += (_, _) => DetectPreview(); _northLocked.Unchecked += (_, _) => DetectPreview();
         _northAngle.LostFocus += (_, _) => DetectPreview();
         _selection.ToolTip = "拖动框选玩家箭头";
@@ -85,7 +101,7 @@ internal sealed class VisionCalibrationWindow : Window
             point.X = Math.Clamp(point.X, 0, _info.Width); point.Y = Math.Clamp(point.Y, 0, _info.Height);
             var size = Math.Min(Math.Abs(point.X - origin.X), Math.Abs(point.Y - origin.Y));
             var x = Math.Min(origin.X, point.X); var y = Math.Min(origin.Y, point.Y);
-            if (size >= 8) { _region = new(x / _info.Width, y / _info.Height, size / _info.Width, size / _info.Height); _preset.SelectedIndex = 2; DrawRegion(); }
+            if (size >= 8) { _region = new(x / _info.Width, y / _info.Height, size / _info.Width, size / _info.Height); _preset.SelectedItem = "手动选区"; DrawRegion(); }
         };
         _selection.MouseLeftButtonUp += (_, _) => { _dragOrigin = null; _selection.ReleaseMouseCapture(); DetectPreview(); };
         _selection.LostMouseCapture += (_, _) => _dragOrigin = null;
@@ -107,17 +123,16 @@ internal sealed class VisionCalibrationWindow : Window
                 _preview.Width = _info.Width; _preview.Height = _info.Height;
                 _selection.Width = _info.Width; _selection.Height = _info.Height;
                 _time.Maximum = Math.Max(0, _info.Duration - 0.1); _time.Value = Math.Clamp(_startTime > 0 ? _startTime : 60, 0, _time.Maximum);
-                if (onlineFrame == null) { _preset.SelectedIndex = 0; await RefreshAsync(); }
-                else
+                if (onlineProfile != null)
                 {
-                    if (onlineProfile != null)
-                    {
-                        _region = onlineProfile.Region; _northLocked.IsChecked = onlineProfile.NorthLocked;
-                        _northAngle.Text = onlineProfile.NorthAngle.ToString(CultureInfo.InvariantCulture); _preset.SelectedIndex = 2;
-                    }
-                    else _preset.SelectedIndex = 0;
-                    SetPreview(onlineFrame.Image); DrawRegion(); DetectPreview(); _analyze.IsEnabled = true;
+                    _region = onlineProfile.Region; _northLocked.IsChecked = onlineProfile.NorthLocked;
+                    _northAngle.Text = onlineProfile.NorthAngle.ToString(CultureInfo.InvariantCulture);
+                    _preset.SelectedItem = "手动选区";
                 }
+                else ApplyPreset();
+                DrawRegion();
+                if (onlineFrame == null) await RefreshAsync();
+                else { SetPreview(onlineFrame.Image); DetectPreview(); _analyze.IsEnabled = true; }
             }
             catch (OperationCanceledException) { }
             catch (Exception ex) { if (!_closed) _result.Text = "读取失败：" + ex.Message; }
@@ -127,7 +142,7 @@ internal sealed class VisionCalibrationWindow : Window
 
     private void ApplyPreset()
     {
-        if (_info == null || _preset.SelectedIndex == 2) return;
+        if (_info == null || _preset.SelectedIndex < 0 || _preset.SelectedItem as string == "手动选区") return;
         var x = _preset.SelectedIndex == 0 ? 280 / 1920d : 160 / 1920d;
         var y = _preset.SelectedIndex == 0 ? 275 / 1080d : 160 / 1080d;
         var size = _info.Height * (_preset.SelectedIndex == 0 ? 140 / 1080d : 80 / 1080d);
@@ -174,7 +189,7 @@ internal sealed class VisionCalibrationWindow : Window
         if (!double.TryParse(_northAngle.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var north) || !double.IsFinite(north)) { _result.Text = "北向角度无效"; return; }
         using var crop = new Cv.Mat(_frame, VideoAnalysis.PixelRegion(_region, new VideoInfo(_frame.Width, _frame.Height, 1)));
         using var scaled = new Cv.Mat(); Cv.Cv2.Resize(crop, scaled, new(160, 160));
-        var detected = ArrowDetector.Detect(scaled, lowResolution: _onlineFrame != null && _onlineFrame.DetailPixels * _region.Width < 60);
+        var detected = ArrowDetector.Detect(scaled, lowResolution: _onlineFrame != null && _onlineFrame.DetailPixels * _region.Width < 60, game: Game);
         PreviewAngle = detected?.Angle;
         if (detected == null) { _result.Text = "当前帧：未识别到玩家箭头"; return; }
         var angle = VisualDirectionTrack.Normalize(detected.Angle - (_northLocked.IsChecked == true ? north : 0));
@@ -185,7 +200,7 @@ internal sealed class VisionCalibrationWindow : Window
     {
         UpdateLayout();
         var root = (FrameworkElement)Content;
-        foreach (var element in new FrameworkElement[] { _analyze, _refresh, _preset, _northAngle, _northLocked, _time }.Where(e => e.IsVisible))
+        foreach (var element in new FrameworkElement[] { _analyze, _refresh, _game, _preset, _northAngle, _northLocked, _time }.Where(e => e.IsVisible))
         {
             var topLeft = element.TranslatePoint(new(0, 0), root);
             if (element.ActualWidth <= 0 || element.ActualHeight <= 0 || topLeft.X < -1 || topLeft.Y < -1
@@ -207,10 +222,10 @@ internal sealed class VisionCalibrationWindow : Window
         if (!double.TryParse(_northAngle.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var north) || !double.IsFinite(north)) { _result.Text = "北向角度无效"; return; }
         if (_onlineFrame != null)
         {
-            OnlineResult = new(_onlineFrame.Width, _onlineFrame.Height, _region, _northLocked.IsChecked == true, north);
+            OnlineResult = new(_onlineFrame.Width, _onlineFrame.Height, _region, _northLocked.IsChecked == true, north, Game);
             DialogResult = true; return;
         }
-        _busy = true; _analyze.IsEnabled = _refresh.IsEnabled = _preset.IsEnabled = _northAngle.IsEnabled = _northLocked.IsEnabled = _time.IsEnabled = false;
+        _busy = true; _analyze.IsEnabled = _refresh.IsEnabled = _game.IsEnabled = _preset.IsEnabled = _northAngle.IsEnabled = _northLocked.IsEnabled = _time.IsEnabled = false;
         _analysis = new();
         var progress = new Progress<AnalysisProgress>(p =>
         {
@@ -220,8 +235,8 @@ internal sealed class VisionCalibrationWindow : Window
         });
         try
         {
-            var region = _region; var locked = _northLocked.IsChecked == true;
-            Result = await Task.Run(() => VideoAnalysis.AnalyzeAsync(_ffmpeg, _path, _info, region, locked, north, progress, _analysis.Token));
+            var region = _region; var locked = _northLocked.IsChecked == true; var game = Game;
+            Result = await Task.Run(() => VideoAnalysis.AnalyzeAsync(_ffmpeg, _path, _info, region, locked, north, progress, _analysis.Token, game));
             if (!_closed) { DialogResult = true; }
         }
         catch (OperationCanceledException) { if (!_closed) _result.Text = "分析已取消，未替换已有时间轴"; }
@@ -229,7 +244,7 @@ internal sealed class VisionCalibrationWindow : Window
         finally
         {
             _analysis.Dispose(); _analysis = null; _busy = false;
-            if (!_closed) _analyze.IsEnabled = _refresh.IsEnabled = _preset.IsEnabled = _northAngle.IsEnabled = _northLocked.IsEnabled = _time.IsEnabled = true;
+            if (!_closed) _analyze.IsEnabled = _refresh.IsEnabled = _game.IsEnabled = _preset.IsEnabled = _northAngle.IsEnabled = _northLocked.IsEnabled = _time.IsEnabled = true;
         }
     }
 }

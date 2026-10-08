@@ -8,7 +8,10 @@ public record ArrowRegion(double X, double Y, double Width, double Height)
 
 public record VisualDirectionFrame(double Time, double? Angle, double Score);
 
-public record OnlineVisionProfile(int Width, int Height, ArrowRegion Region, bool NorthLocked, double NorthAngle);
+public enum VisionGame { Genshin, Endfield }
+
+public record OnlineVisionProfile(int Width, int Height, ArrowRegion Region, bool NorthLocked, double NorthAngle,
+    VisionGame Game = VisionGame.Genshin);
 
 public sealed class VisualDirectionTrack
 {
@@ -17,6 +20,7 @@ public sealed class VisualDirectionTrack
     public long SourceLength { get; set; }
     public long SourceModifiedUtcTicks { get; set; }
     public double Interval { get; set; } = 0.5;
+    public VisionGame Game { get; set; }
     public bool NorthLocked { get; set; }
     public double NorthAngle { get; set; }
     public ArrowRegion Region { get; set; } = new(0, 0, 1, 1);
@@ -55,7 +59,7 @@ public sealed class VisualDirectionTrack
             && file.Length == SourceLength && file.LastWriteTimeUtc.Ticks == SourceModifiedUtcTicks;
     }
 
-    public bool IsValid => Version == 1 && !string.IsNullOrWhiteSpace(SourcePath) && SourceLength >= 0
+    public bool IsValid => Enum.IsDefined(Game) && Version == 1 && !string.IsNullOrWhiteSpace(SourcePath) && SourceLength >= 0
         && SourceModifiedUtcTicks >= 0 && double.IsFinite(Interval) && Interval >= 0.1 && Interval <= 10
         && double.IsFinite(NorthAngle) && Region is { IsValid: true } && Frames != null
         && Frames.Count <= 200000 && Frames.All(f => f != null && double.IsFinite(f.Time) && f.Time >= 0

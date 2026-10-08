@@ -81,12 +81,13 @@ public static class VideoAnalysis
     }
 
     public static async Task<VisualDirectionTrack> AnalyzeAsync(string ffmpeg, string path, VideoInfo info, ArrowRegion region,
-        bool northLocked, double northAngle, IProgress<AnalysisProgress>? progress, CancellationToken cancellation)
+        bool northLocked, double northAngle, IProgress<AnalysisProgress>? progress, CancellationToken cancellation,
+        VisionGame game = VisionGame.Genshin)
     {
         var roi = PixelRegion(region, info);
         var file = new FileInfo(path);
         var track = new VisualDirectionTrack { SourcePath = file.FullName, SourceLength = file.Length, SourceModifiedUtcTicks = file.LastWriteTimeUtc.Ticks,
-            Region = region, NorthLocked = northLocked, NorthAngle = northAngle };
+            Region = region, NorthLocked = northLocked, NorthAngle = northAngle, Game = game };
         using var process = Start(ffmpeg, ["-nostdin", "-hide_banner", "-loglevel", "error", "-noautorotate", "-i", path, "-an", "-vf",
             $"fps=2:start_time=0,crop={roi.Width}:{roi.Height}:{roi.X}:{roi.Y},scale=160:160", "-pix_fmt", "bgr24", "-f", "rawvideo", "pipe:1"]);
         using var registration = cancellation.Register(() => Stop(process));
@@ -102,7 +103,7 @@ public static class VideoAnalysis
                 if (count == 0) break;
                 await process.StandardOutput.BaseStream.ReadExactlyAsync(buffer.AsMemory(count), cancellation).ConfigureAwait(false);
                 Marshal.Copy(buffer, 0, frame.Data, buffer.Length);
-                var result = ArrowDetector.Detect(frame);
+                var result = ArrowDetector.Detect(frame, game: game);
                 if (result != null) recognized++;
                 track.Frames.Add(new(track.Frames.Count * track.Interval, result?.Angle, result?.Score ?? 0));
                 if (track.Frames.Count % 20 == 0) progress?.Report(new(track.Frames[^1].Time, info.Duration, recognized, track.Frames.Count));

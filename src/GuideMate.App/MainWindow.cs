@@ -718,6 +718,12 @@ public sealed partial class MainWindow : Window
         }
         try
         {
+            if (Environment.GetCommandLineArgs().Contains("--endfield-vision-probe"))
+            {
+                await WaitFor(() => _duration > 20, "initial sample page is loaded");
+                await VerifyEndfieldVisionAsync(checks);
+                WriteSmokeResult(true, "", checks); return;
+            }
             Left = -50000; Top = -50000; Ui.PlaceVisible(this); await Task.Delay(150);
             var titlePoint = PointToScreen(new Point(ActualWidth / 2, 20));
             var screenPoint = new System.Drawing.Point((int)titlePoint.X, (int)titlePoint.Y);
