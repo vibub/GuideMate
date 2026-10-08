@@ -6,7 +6,7 @@ namespace GuideMate.App;
 
 internal sealed class VisibleCursorWebView : WebView2CompositionControl
 {
-    // WPF exposes no public handle getter; this is covered against the bundled runtime.
+    // WPF exposes no public handle getter; keep the Cursor.Handle compatibility check when upgrading .NET.
     private static readonly PropertyInfo CursorHandle = typeof(Cursor).GetProperty("Handle", BindingFlags.Instance | BindingFlags.NonPublic)!;
 
     static VisibleCursorWebView()

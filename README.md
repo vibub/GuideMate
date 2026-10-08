@@ -6,13 +6,13 @@ Windows 攻略视频跟随工具：置顶小窗、全局热键、鼠标穿透、
 
 ## 运行
 
-支持 Windows 10 1809 及以上、Windows 11（x64），运行需要 [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
+支持 Windows 10 1809 及以上、Windows 11（x64），运行需要 [.NET 10 Desktop Runtime（Windows x64）](https://dotnet.microsoft.com/download/dotnet/10.0) 和 [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
 
-**使用发布包**：从 GitHub 仓库的 Releases 下载 `GuideMate-版本-win-x64.zip`，完整解压后双击 `Start-GuideMate.cmd` 或 `GuideMate.exe`。不要只取出单个 EXE。运行库内置于主程序 `GuideMate.exe` 和 `chrome-host/GuideMate.ChromeHost.exe`，不需要安装 .NET 运行时或 SDK；视频素材、浏览器扩展及说明仍随包提供。
+**使用发布包**：从 GitHub 仓库的 Releases 下载 `GuideMate-版本-win-x64.zip`，完整解压后双击 `Start-GuideMate.cmd` 或 `GuideMate.exe`。不要只取出单个 EXE。主程序和 Chrome 桥接均为单文件，发布包不附带 .NET 运行时，也不需要安装 SDK。每次启动会先检查所需的运行时，缺少时由 Windows 原生启动入口显示安装提示并提供官方下载链接；请安装 **.NET 10 Desktop Runtime 的 Windows x64 版**，普通 .NET Runtime、x86 版或其他大版本不足以运行 WPF 主程序。安装完成后重新打开随引；程序不会自动下载或安装运行时。视频素材、浏览器扩展及说明仍随包提供。
 
 **从源码运行**：安装 [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)，在 Windows 上克隆源码后双击根目录的 `Start-GuideMate.cmd`。有本地发布目录时直接启动；否则编译 Release。命令行可用 `./scripts/Start-GuideMate.ps1 -Build` 强制从源码构建。
 
-首次运行会将必要的原生库解包到 `%TEMP%\.net`，后续启动复用缓存；运行库不启用压缩。
+OpenCV 与 WebView2 加载器仍随包提供，首次运行会将这些必要的原生库解包到 `%TEMP%\.net`，后续启动复用缓存；运行库不启用压缩。
 
 更新前正常退出随引，只替换程序与资源，保留原来的用户资料。旧版本含有大量 DLL 时，将新版完整解压到新的程序目录，避免覆盖解压留下旧运行库；新目录中的程序仍沿用已记录的用户资料目录。首次启动默认打开 B 站；已有用户继续使用已记录的热键、窗口状态、校准和浏览器资料。
 

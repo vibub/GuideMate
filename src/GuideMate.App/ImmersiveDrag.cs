@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
+using System.Windows.Threading;
 
 namespace GuideMate.App;
 
@@ -9,7 +10,9 @@ public sealed partial class MainWindow
     private bool _dragMovePending;
     private nint _dragWindow;
     private int _dragLeft, _dragTop;
-    private TimeSpan _lastDragFrame = TimeSpan.MinValue;
+    // Input owns window movement; full-screen layered rendering must not gate its deadline.
+    private readonly DispatcherTimer _dragMoveTimer = new(DispatcherPriority.Input)
+        { Interval = TimeSpan.FromMilliseconds(16) };
 
     private void QueueImmersiveDrag(DragDeltaEventArgs e)
     {
@@ -25,23 +28,19 @@ public sealed partial class MainWindow
         if (!_dragMovePending)
         {
             _dragMovePending = true;
-            CompositionTarget.Rendering += OnImmersiveDragFrame;
+            _dragMoveTimer.Tick += OnImmersiveDragTick;
+            _dragMoveTimer.Start();
         }
         e.Handled = true;
     }
 
-    private void OnImmersiveDragFrame(object? sender, EventArgs e)
-    {
-        var frame = (RenderingEventArgs)e;
-        if (frame.RenderingTime == _lastDragFrame) return;
-        _lastDragFrame = frame.RenderingTime;
-        FinishImmersiveDrag(false);
-    }
+    private void OnImmersiveDragTick(object? sender, EventArgs e) => FinishImmersiveDrag(false);
 
     private void FinishImmersiveDrag(bool canceled)
     {
         if (!_dragMovePending) return;
-        CompositionTarget.Rendering -= OnImmersiveDragFrame;
+        _dragMoveTimer.Stop();
+        _dragMoveTimer.Tick -= OnImmersiveDragTick;
         _dragMovePending = false;
         if (canceled || _closing || !_immersive || !IsVisible || WindowState != WindowState.Normal) return;
         if (!ReadDragWindowRect(_dragWindow, out var rect) || rect.Left == _dragLeft && rect.Top == _dragTop) return;

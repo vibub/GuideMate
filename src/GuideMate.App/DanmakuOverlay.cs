@@ -19,6 +19,7 @@ internal sealed class DanmakuOverlay : IDisposable
     private readonly NamedPipeServerStream _pipe;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly Process _process;
+    private DanmakuState? _lastState;
     public event Action<string>? Failed;
 
     public DanmakuOverlay(string executable)
@@ -32,7 +33,13 @@ internal sealed class DanmakuOverlay : IDisposable
         _ = WriteStatesAsync();
     }
 
-    public void SetState(DanmakuState state) => _states.Writer.TryWrite(state);
+    public void SetState(DanmakuState state)
+    {
+        // A same-monitor move changes no overlay state. Do not resend its entire comment batch.
+        if (_lastState == state) return;
+        _lastState = state;
+        _states.Writer.TryWrite(state);
+    }
 
     private async Task WriteStatesAsync()
     {

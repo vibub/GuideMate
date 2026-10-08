@@ -51,7 +51,7 @@
 
 客户端采用 C#、.NET 10 LTS、WPF。使用 Microsoft.Web.WebView2 的 WebView2CompositionControl，在 WPF 层处理工具栏、遮罩和透明裁剪，避免普通 HWND 嵌入控件挡住 WPF 元素的 airspace 问题。该控件自 WebView2 SDK 1.0.2957.106 起进入稳定发行版。
 
-使用 Evergreen WebView2 Runtime。此次实际开发环境是用户已安装的 .NET SDK 10.0.401、.NET Runtime 10.0.12、WebView2 Runtime 154.0.4258.53。NuGet 固定 Microsoft.Web.WebView2 1.0.4258.31。WPF 目标框架为 net10.0-windows10.0.17763.0，显式包含 Windows SDK 契约，否则 composition 控件可能在启动时缺少 Microsoft.Windows.SDK.NET。发布采用 win-x64 自包含目录，运行不需要 .NET SDK；WebView2 Runtime 仍为前置条件。
+使用 Evergreen WebView2 Runtime。此次实际开发环境是用户已安装的 .NET SDK 10.0.401、.NET Runtime 10.0.12、WebView2 Runtime 154.0.4258.53。NuGet 固定 Microsoft.Web.WebView2 1.0.4258.31。WPF 目标框架为 net10.0-windows10.0.17763.0，显式包含 Windows SDK 契约，否则 composition 控件可能在启动时缺少 Microsoft.Windows.SDK.NET。发布采用 win-x64 框架依赖单文件，包内不包含 .NET；运行需要系统已安装 .NET 10 Desktop Runtime x64 和 WebView2 Runtime，无需 SDK。原生 GUI apphost 在执行托管代码前解析运行时，缺失时显示安装提示与官方下载链接，不自动安装，也不访问用户资料。
 
 不采用普通网页作为最终产品：浏览器页面不能独立完成 Windows 全局热键和跨程序鼠标穿透。也不在本版引入服务端或付费模型 API。
 
@@ -116,7 +116,7 @@ MediaResponse 支持完整文件 200、单段字节范围 206、无效范围 416
 
 沉浸小窗拖动使用 WPF Thumb：它管理按下、鼠标捕获、位移和释放，DragDelta 仅在沉浸且正常显示状态下计算物理像素目标。原 DragMove 会发送 WM_SYSCOMMAND/SC_MOVE 并进入 Windows 拖窗循环，贴边时触发 Snap 预览；直接移动窗口避免该入口。Thumb 保持原拖动图标、提示、34×32 尺寸与悬停/拖动状态样式；手动缩放与普通标题栏 DragMove 保留。不改系统设置，不移除全局分屏能力，不拦截 Win+方向键；混合 DPI 跨显示器仍需实测。
 
-拖动更新在 CompositionTarget.Rendering 合并为每帧最多一次 SetWindowPos，以 SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE 同时更新横纵坐标，避免逐个设置 Left/Top 产生两次窗口移动及浏览器位置通知。Thumb 位移是当前局部坐标相对最初抓取点的差，必须以当前原生边界计算并替换待应用目标，不能把多个尚未应用的位移累加。WPF 通过原生位置消息更新 Left/Top。鼠标松开会立即应用最后待处理位置；取消捕获、切换模式、最小化、隐藏及关闭会解除渲染订阅并丢弃待移动目标，不让下一帧把恢复后的窗口移走。
+拖动更新在 DispatcherPriority.Input 的 16 ms 计时节拍合并为每轮最多一次 SetWindowPos，不依赖 CompositionTarget.Rendering 的合成帧回调，以 SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE 同时更新横纵坐标，避免逐个设置 Left/Top 产生两次窗口移动及浏览器位置通知。Thumb 位移是当前局部坐标相对最初抓取点的差，必须以当前原生边界计算并替换待应用目标，不能把多个尚未应用的位移累加。WPF 通过原生位置消息更新 Left/Top。鼠标松开会立即应用最后待处理位置；取消捕获、切换模式、最小化、隐藏及关闭会停止输入计时并丢弃待移动目标，不让后续回调把恢复后的窗口移走。
 
 新配置通过可空 TopmostMode 持久化。旧配置未含该字段时，读取原 Topmost 布尔值：true 对应 Always，false 对应 Never；新模式优先于旧值，选择后同步旧布尔字段以兼容既有配置。无效枚举值在设置读取边界回退到旧值。默认保持已有的始终置顶行为，不能借功能升级重置用户设置或浏览器资料。字幕浮窗不跟随主窗三档变化，仍是独立置顶窗口。
 
@@ -154,7 +154,7 @@ HotkeyRecorder 是只读录制输入框，使用 PreviewKeyDown 捕获组合，�
 
 沉浸模式不沿用网页播放器的隐藏光标策略：视频聚焦 CSS 显式设置 cursor:default，WPF 工作区用 Cursor=Arrow、ForceCursor=true 覆盖浏览器子控件返回的空光标。退出沉浸后解除强制光标，网页样式正常恢复，不设置全应用 Mouse.OverrideCursor。
 
-普通窗口、最大化、网页聚焦和 iframe 也必须保持指针可见。VisibleCursorWebView 继承 composition 控件，在 CursorProperty 的强制回调中只将空值或无效原生句柄转为 Cursors.Arrow，保留正常手型、文本、缩放及其他有效自定义指针。SDK 通过 CursorInteropHelper.Create 包装 Win32 句柄，零句柄产生的新 Cursor 并不等于 Cursors.None；仅比较单例会漏掉真正的隐藏指针。WPF 没有公开句柄读取接口，当前实现缓存读取内部 Handle 属性的反射元数据；依赖随包固定的 .NET 10.0.12，运行时升级时必须重新验证包装指针用例。不修改普通页面或 iframe 的 CSS，不使用全应用光标覆盖，也不依赖鼠标从哪一侧进入。
+普通窗口、最大化、网页聚焦和 iframe 也必须保持指针可见。VisibleCursorWebView 继承 composition 控件，在 CursorProperty 的强制回调中只将空值或无效原生句柄转为 Cursors.Arrow，保留正常手型、文本、缩放及其他有效自定义指针。SDK 通过 CursorInteropHelper.Create 包装 Win32 句柄，零句柄产生的新 Cursor 并不等于 Cursors.None；仅比较单例会漏掉真正的隐藏指针。WPF 没有公开句柄读取接口，当前实现缓存读取内部 Handle 属性的反射元数据；使用系统安装的 .NET 10；升级运行时补丁时需重新验证包装指针用例。不修改普通页面或 iframe 的 CSS，不使用全应用光标覆盖，也不依赖鼠标从哪一侧进入。
 
 HTML 原生媒体控件属于视频内部，不能靠隐藏网页 DOM 去掉。聚焦时记住原 video.controls 状态，鼠标移动/点击或按键后保持显示 1.8 秒，无输入时关闭 controls，暂停也自动隐藏；指针按住拖动或媒体 seeking 时延后隐藏。鼠标箭头始终独立保持可见。退出聚焦、视频消失或切换时清除定时器和监听并恢复原 controls；重复 focusOn 不把临时隐藏状态误存为原状态。原来没有原生控件的网站不额外开启 controls。跨域子帧在自身桥接脚本内使用相同控制逻辑，父帧仍只扩展 iframe。
 
@@ -216,7 +216,7 @@ VideoAnalysis 使用已安装 FFmpeg/ffprobe，以 ArgumentList 传参，不经�
 
 开发环境：.NET 10 SDK、WebView2 Runtime；NuGet 固定 WebView2、OpenCvSharp4 和 runtime.win.slim 4.13.0.20260627。OpenCV native DLL 随发布包提供；本地分析使用已有 FFmpeg/ffprobe，没有新增系统 SDK。升级后重新验证透明视频绘制与真实图像。脚本优先使用项目 .tools/dotnet/dotnet.exe，找不到时检查系统 SDK。
 
-发布命令生成 artifacts/GuideMate-win-x64 自包含目录。提供 Start-GuideMate.ps1 和双击入口，不把源码包描述为已安装应用。
+发布命令生成 artifacts/GuideMate-win-x64 框架依赖单文件目录，不携带 .NET 运行库。提供 Start-GuideMate.ps1 和双击入口，不把源码包描述为已安装应用。
 
 核心自动检查必须覆盖字幕解析、时间偏移、重叠/边界、JSON 字幕、方位复合词、否定、视角与战斗事件。浏览器桥脚本做语法检查；真实客户端用样例媒体验证播放暂停、跳转、倍速、字幕同步、挖孔和透明度。至少一次使用 Windows UI 截图查看整体布局与浮窗，并检查窗口尺寸变化。
 
@@ -257,4 +257,4 @@ VideoAnalysis 使用已安装 FFmpeg/ffprobe，以 ArgumentList 传参，不经�
 
 适配依据为 2026-10-08 读取的 B 站公开播放器 nano 4.10.4（构建时间 2026-09-20）：core.js 暴露 getDanmakuX，npd.491.8e830665.js 管理 visualArray / textData / isHide / showed，npd.505.2d76eed1.js 配置弹幕筛选并将实例挂到播放器。以上内部结构可能随网站更新而改变，真实站点验收需独立于合成模型检查。
 
-全屏弹幕在独立绘制进程的 STA 线程创建窗口与更新字形位图，不在主 UI 线程逐帧绘制；待处理状态合并为最新快照，隐藏或退出时停止绘制。同屏拖动不会重置弹幕时钟。发布使用同版本 OpenCV Slim 原生运行库；图像处理流程保持一致，FFmpeg 离线解码继续使用外部工具。
+全屏弹幕在独立绘制进程的 STA 线程创建窗口与更新字形位图，不在主 UI 线程逐帧绘制；待处理状态合并为最新快照，隐藏或退出时停止绘制。同屏拖动不会重复传输未变化的状态，也不会重置弹幕时钟；小窗位置更新按输入计时提交，不等待全屏透明绘制的合成帧。发布使用同版本 OpenCV Slim 原生运行库；图像处理流程保持一致，FFmpeg 离线解码继续使用外部工具。
