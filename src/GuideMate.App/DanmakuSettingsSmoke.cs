@@ -50,8 +50,11 @@ public sealed partial class MainWindow
             for (var i = 0; i < controls.Length; i++) controls[i].Value = changed[i];
             var scroll = Descendants<ScrollViewer>(dialog).First();
             var heading = Descendants<TextBlock>(dialog).Single(text => text.Text == "全屏弹幕");
-            scroll.ScrollToVerticalOffset(heading.TranslatePoint(new Point(), (UIElement)scroll.Content).Y - 12);
+            Descendants<Button>(dialog).Single(button => AutomationProperties.GetName(button) == "转到弹幕设置")
+                .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             await Task.Delay(100);
+            Check(heading.TranslatePoint(new Point(), scroll).Y >= 0 && heading.TranslatePoint(new Point(), scroll).Y < 50,
+                "settings category navigation brings the selected section into view");
             var root = (FrameworkElement)dialog.Content;
             foreach (var control in controls)
             {

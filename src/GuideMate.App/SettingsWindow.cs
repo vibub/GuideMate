@@ -4,10 +4,21 @@ internal sealed class SettingsWindow : Window
 {
     public SettingsWindow(MainWindow owner, AppSettings settings, NativeHotkeys keys, Func<Dictionary<string, string>, int, string?> apply)
     {
-        Title = "随引设置"; Owner = owner; Width = 480; Height = 680; MinWidth = 400; MinHeight = 460;
-        WindowStartupLocation = WindowStartupLocation.CenterOwner; Background = Brushes.White;
-        var panel = new StackPanel { Margin = new(22) };
-        panel.Children.Add(Ui.Heading("全局热键"));
+        Title = "随引设置"; Owner = owner; Width = 620; Height = 760; MinWidth = 400; MinHeight = 460;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner; Background = Ui.Canvas;
+        var sections = new StackPanel { Margin = new(22, 4, 22, 12) };
+        var anchors = new List<(string Label, FrameworkElement Element)>();
+        StackPanel Section(string title, string label)
+        {
+            var content = new StackPanel { Margin = new(18, 0, 18, 16) };
+            content.Children.Add(Ui.Heading(title));
+            var surface = new Border { Background = Brushes.White, CornerRadius = new(8), Margin = new(0, 0, 0, 14), Child = content };
+            sections.Children.Add(surface);
+            anchors.Add((label, surface));
+            return content;
+        }
+        var panel = Section("全局热键", "热键");
+        panel.Children.Add(Ui.Text("点击输入框录制快捷键，支持鼠标侧键及组合键。", 12, Ui.Muted));
         var names = new Dictionary<string, string> { ["PlayPause"] = "播放 / 暂停", ["SeekBack"] = "后退", ["SeekForward"] = "快进", ["RateUp"] = "加快倍速", ["RateDown"] = "降低倍速", ["TemporaryRate"] = "长按临时倍速", ["PreviousEpisode"] = "上一集", ["NextEpisode"] = "下一集", ["Immersive"] = "沉浸模式", ["FullscreenDanmaku"] = "全屏弹幕开关", ["Hide"] = "隐藏 / 恢复", ["ClickThrough"] = "鼠标穿透" };
         var fields = new Dictionary<string, TextBox>();
         var error = Ui.Text("", 12, Brushes.Firebrick); error.Margin = new(0, 10, 0, 8);
@@ -30,7 +41,7 @@ internal sealed class SettingsWindow : Window
             Grid.SetColumn(field, 1); row.Children.Add(field); fields[pair.Key] = field; panel.Children.Add(row);
         }
         panel.Children.Add(Ui.Text("紧急恢复：" + keys.EmergencyBinding, 12, Ui.Green));
-        panel.Children.Add(Ui.Heading("全屏弹幕"));
+        panel = Section("全屏弹幕", "弹幕");
         var danmaku = Ui.Toggle("B 站全屏弹幕", settings.FullscreenDanmaku, _ => { });
         System.Windows.Automation.AutomationProperties.SetName(danmaku, "B 站全屏弹幕");
         panel.Children.Add(danmaku);
@@ -52,7 +63,7 @@ internal sealed class SettingsWindow : Window
         var danmakuFont = DanmakuSlider("弹幕字号", 0.5, 2, settings.DanmakuFontScale, 0.1, value => $"{value:P0}");
         var danmakuSpeed = DanmakuSlider("弹幕速度", 0.5, 2, settings.DanmakuSpeed, 0.25,
             value => value == 1 ? "适中（1x）" : $"{value:0.##}x");
-        panel.Children.Add(Ui.Heading("沉浸小窗"));
+        panel = Section("沉浸小窗", "小窗");
         var opacityLabel = Ui.Text($"小窗透明度  {1 - settings.GetImmersiveOpacity():P0}", 12);
         panel.Children.Add(opacityLabel);
         var opacity = Ui.Slider(0, 0.8, 1 - settings.GetImmersiveOpacity(), value => opacityLabel.Text = $"小窗透明度  {value:P0}");
@@ -70,11 +81,12 @@ internal sealed class SettingsWindow : Window
         xray.Checked += (_, _) => radius.IsEnabled = true;
         xray.Unchecked += (_, _) => radius.IsEnabled = false;
         panel.Children.Add(radius);
-        panel.Children.Add(Ui.Heading("跳转时长（秒）"));
+        panel = Section("播放控制", "播放");
+        panel.Children.Add(Ui.Text("跳转时长（秒）", 12));
         var seek = new TextBox { Text = settings.SeekSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture) };
         panel.Children.Add(seek);
         panel.Children.Add(Ui.Heading("临时倍速"));
-        var temporaryRate = new ComboBox { Height = 30, ItemsSource = new[] { 0.5, 1, 1.5, 2, 2.5, 3, 4 }, SelectedItem = settings.TemporaryRate };
+        var temporaryRate = new ComboBox { Height = 36, ItemsSource = new[] { 0.5, 1, 1.5, 2, 2.5, 3, 4 }, SelectedItem = settings.TemporaryRate };
         if (temporaryRate.SelectedItem == null) temporaryRate.SelectedItem = 2d;
         panel.Children.Add(temporaryRate);
         panel.Children.Add(Ui.Heading("长按触发时间（毫秒）"));
@@ -104,11 +116,37 @@ internal sealed class SettingsWindow : Window
             owner.ApplySmallWindowSettings();
             owner.SaveSettings();
             Close();
-        });
+        }, primary: true);
+        save.HorizontalContentAlignment = HorizontalAlignment.Center;
+        save.MinWidth = 120;
+        var cancel = Ui.Command("\uE711", "取消", Close);
+        cancel.IsCancel = true;
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        actions.Children.Add(cancel); actions.Children.Add(save);
         var footer = new StackPanel { Margin = new(22, 0, 22, 16) };
-        footer.Children.Add(error); footer.Children.Add(save);
-        var layout = new Grid(); layout.RowDefinitions.Add(new()); layout.RowDefinitions.Add(new() { Height = GridLength.Auto });
-        layout.Children.Add(new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = panel });
-        Grid.SetRow(footer, 1); layout.Children.Add(footer); Content = layout;
+        footer.Children.Add(error); footer.Children.Add(actions);
+        var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = sections };
+        var header = new StackPanel { Margin = new(24, 20, 24, 12) };
+        var title = Ui.Text("偏好设置", 24); title.FontWeight = FontWeights.SemiBold;
+        header.Children.Add(title);
+        var description = Ui.Text("调整随引的操作习惯与观看体验，保存后生效。", 12, Ui.Muted);
+        description.Margin = new(0, 6, 0, 12); header.Children.Add(description);
+        var navigation = new WrapPanel();
+        foreach (var anchor in anchors)
+        {
+            var target = anchor.Element;
+            var button = new Button { Content = anchor.Label, Padding = new(14, 6, 14, 6), ToolTip = "转到" + anchor.Label + "设置" };
+            System.Windows.Automation.AutomationProperties.SetName(button, "转到" + anchor.Label + "设置");
+            button.Click += (_, _) => scroll.ScrollToVerticalOffset(target.TranslatePoint(new Point(), sections).Y);
+            navigation.Children.Add(button);
+        }
+        header.Children.Add(navigation);
+        var layout = new Grid { Background = Ui.Canvas };
+        layout.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        layout.RowDefinitions.Add(new());
+        layout.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        layout.Children.Add(header);
+        Grid.SetRow(scroll, 1); layout.Children.Add(scroll);
+        Grid.SetRow(footer, 2); layout.Children.Add(footer); Content = layout;
     }
 }

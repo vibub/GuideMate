@@ -13,6 +13,7 @@
     <ApplicationIcon>../../assets/branding/guidemate.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="WPF-UI" Version="4.3.0" />
     <Resource Include="../../assets/branding/guidemate.ico" Link="Assets/guidemate.ico" />
     <ProjectReference Include="../GuideMate.Core/GuideMate.Core.csproj" />
     <ProjectReference Include="../GuideMate.Vision/GuideMate.Vision.csproj" />

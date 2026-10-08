@@ -115,6 +115,7 @@ public sealed partial class MainWindow
             await Wait(() => Math.Abs(_position - 18) < 0.3, "seek rebases playback clock");
             ToggleImmersive();
             Check(!overlay.IsVisible && overlay.CommentCount == 0, "exit immersive clears full-screen comments");
+            await SaveAppearancePreviewAsync();
             PressDanmakuKey();
             Check(!_settings.FullscreenDanmaku && !overlay.IsVisible, "normal-mode keyboard toggle disables preference only");
             PressDanmakuKey();

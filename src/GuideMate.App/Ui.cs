@@ -6,25 +6,26 @@ namespace GuideMate.App;
 
 internal static class Ui
 {
+    public static readonly Brush Canvas = new SolidColorBrush(Color.FromRgb(246, 248, 247));
     public static readonly Brush Ink = new SolidColorBrush(Color.FromRgb(35, 39, 42));
     public static readonly Brush Green = new SolidColorBrush(Color.FromRgb(19, 124, 102));
     public static readonly Brush Muted = new SolidColorBrush(Color.FromRgb(105, 114, 119));
     public static TextBlock Text(string text, double size = 13, Brush? color = null) => new()
     { Text = text, FontSize = size, Foreground = color ?? Ink, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
-    public static TextBlock Heading(string text) => new() { Text = text, FontSize = 14, FontWeight = FontWeights.SemiBold, Margin = new(0, 16, 0, 8) };
-    public static Button Icon(string glyph, string name, Action action)
+    public static TextBlock Heading(string text) => new() { Text = text, FontSize = 14, FontWeight = FontWeights.SemiBold, Foreground = Ink, Margin = new(0, 20, 0, 10) };
+    public static Button Icon(string glyph, string name, Action action, bool primary = false)
     {
-        var button = new Button { Content = new TextBlock { Text = glyph, FontFamily = new("Segoe MDL2 Assets"), FontSize = 15 }, ToolTip = name, Width = 34, Height = 32, Padding = new(4) };
+        var button = new Wpf.Ui.Controls.Button { Appearance = primary ? Wpf.Ui.Controls.ControlAppearance.Primary : Wpf.Ui.Controls.ControlAppearance.Transparent, Margin = new(2), Content = new TextBlock { Text = glyph, FontFamily = new("Segoe MDL2 Assets"), FontSize = 15 }, ToolTip = name, Width = 34, Height = 32, Padding = new(4) };
         AutomationProperties.SetName(button, name);
         button.Click += (_, _) => action();
         return button;
     }
-    public static Button Command(string glyph, string name, Action action)
+    public static Button Command(string glyph, string name, Action action, bool primary = false)
     {
         var panel = new StackPanel { Orientation = Orientation.Horizontal };
         panel.Children.Add(new TextBlock { Text = glyph, FontFamily = new("Segoe MDL2 Assets"), Margin = new(0, 0, 7, 0), VerticalAlignment = VerticalAlignment.Center });
-        panel.Children.Add(Text(name));
-        var button = new Button { Content = panel, ToolTip = name, HorizontalContentAlignment = HorizontalAlignment.Left };
+        panel.Children.Add(new TextBlock { Text = name, VerticalAlignment = VerticalAlignment.Center });
+        var button = new Wpf.Ui.Controls.Button { Content = panel, ToolTip = name, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Left, Appearance = primary ? Wpf.Ui.Controls.ControlAppearance.Primary : Wpf.Ui.Controls.ControlAppearance.Secondary, Margin = new(2), Padding = new(12, 7, 12, 7), MinHeight = 32 };
         AutomationProperties.SetName(button, name);
         button.Click += (_, _) => action();
         return button;
@@ -38,7 +39,7 @@ internal static class Ui
     }
     public static Slider Slider(double min, double max, double value, Action<double> changed)
     {
-        var slider = new Slider { Minimum = min, Maximum = max, Value = value, SmallChange = (max - min) / 20 };
+        var slider = new Slider { Minimum = min, Maximum = max, Value = value, SmallChange = (max - min) / 20, Margin = new(0, 8, 0, 8) };
         slider.ValueChanged += (_, e) => changed(e.NewValue);
         return slider;
     }

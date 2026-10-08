@@ -7,6 +7,7 @@ public partial class App : System.Windows.Application
     private Mutex? _instance;
     private void OnStartup(object sender, StartupEventArgs e)
     {
+        Wpf.Ui.Appearance.ApplicationAccentColorManager.Apply(Color.FromRgb(19, 124, 102));
         var smoke = e.Args.Contains("--smoke-test");
         _instance = new Mutex(true, smoke ? "Local\\GuideMate.Smoke" : "Local\\GuideMate.Desktop", out var first);
         if (!first)

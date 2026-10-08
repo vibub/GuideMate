@@ -4,6 +4,7 @@
 
 | 组件 | 当前直接依赖 | 许可证/说明 | 来源 |
 | --- | --- | --- | --- |
+| WPF UI / WPF UI Abstractions | 4.3.0 | MIT，全文见 licenses/WPF-UI-LICENSE.txt | https://github.com/lepoco/wpfui |
 | Microsoft.Web.WebView2 SDK | 1.0.4258.31 | 包内 BSD 条款，全文见 licenses/WEBVIEW2-LICENSE.txt | https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.4258.31 |
 | OpenCvSharp4 / Windows runtime | 4.13.0.20260627 | Apache-2.0，Copyright 2008-2026 shimat；全文见 licenses/OPENCVSHARP-LICENSE.txt | https://github.com/shimat/opencvsharp |
 | OpenCV | 原生 runtime 内组件 | Apache-2.0，全文见 licenses/OPENCV-LICENSE.txt | https://github.com/opencv/opencv |

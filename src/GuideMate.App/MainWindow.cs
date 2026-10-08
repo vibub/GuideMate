@@ -34,8 +34,8 @@ public sealed partial class MainWindow : Window
     private readonly TextBlock _subtitleSource = Ui.Text("未加载字幕", 11, Ui.Muted);
     private readonly TextBlock _hotkeyStatus = Ui.Text("", 11, Ui.Muted);
     private readonly Slider _timeline = new() { Minimum = 0, Maximum = 1, Margin = new(12, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center };
-    private readonly ComboBox _rate = new() { Width = 76, Height = 30, VerticalContentAlignment = VerticalAlignment.Center, Margin = new(8, 0, 8, 0) };
-    private readonly ComboBox _topmostMode = new() { Height = 30, VerticalContentAlignment = VerticalAlignment.Center, Margin = new(0, 4, 0, 4) };
+    private readonly ComboBox _rate = new() { Width = 76, Height = 36, VerticalContentAlignment = VerticalAlignment.Center, Margin = new(8, 0, 8, 0) };
+    private readonly ComboBox _topmostMode = new() { Height = 36, VerticalContentAlignment = VerticalAlignment.Center, Margin = new(0, 4, 0, 4) };
     private readonly ListBox _bookmarks = new() { BorderThickness = new(0) };
     private readonly ListBox _history = new() { BorderThickness = new(0) };
     private Button _play = null!;
@@ -123,13 +123,13 @@ public sealed partial class MainWindow : Window
 
     private void BuildUi()
     {
-        _root.Background = Brushes.White;
+        _root.Background = Ui.Canvas;
         foreach (var height in new[] { new GridLength(46), new(44), new(1, GridUnitType.Star), new(54), new(28) })
             _root.RowDefinitions.Add(new() { Height = height });
-        var title = new Grid { Background = new SolidColorBrush(Color.FromRgb(239, 243, 242)) };
+        var title = new Grid { Background = Ui.Canvas };
         title.ColumnDefinitions.Add(new()); title.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var brand = new StackPanel { Orientation = Orientation.Horizontal, Margin = new(14, 0, 0, 0) };
-        brand.Children.Add(Ui.Text("随引", 19, Ui.Green));
+        brand.Children.Add(new TextBlock { Text = "随引", FontSize = 20, FontWeight = FontWeights.SemiBold, Foreground = Ui.Green, VerticalAlignment = VerticalAlignment.Center });
         brand.Children.Add(new TextBlock { Text = "攻略跟随", Margin = new(13, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = Ui.Muted, FontSize = 12 });
         title.Children.Add(brand);
         title.MouseLeftButtonDown += (_, e) => { if (e.ClickCount == 2) ToggleImmersive(); else if (e.OriginalSource is not Button && e.LeftButton == MouseButtonState.Pressed) DragMove(); };
@@ -166,10 +166,10 @@ public sealed partial class MainWindow : Window
         _browser.DefaultBackgroundColor = System.Drawing.Color.Black;
         _videoSurface.Children.Add(_browser);
         _workspace.Children.Add(_videoSurface);
-        var tabs = _sidebar = new TabControl { BorderThickness = new(1, 0, 0, 0), BorderBrush = new SolidColorBrush(Color.FromRgb(220, 226, 224)), Background = Brushes.White };
-        var follow = new StackPanel { Margin = new(16, 0, 16, 12) };
+        var tabs = _sidebar = new TabControl { Padding = new(0), BorderThickness = new(1, 0, 0, 0), BorderBrush = new SolidColorBrush(Color.FromRgb(220, 226, 224)), Background = Brushes.White };
+        var follow = new StackPanel { Margin = new(18, 0, 18, 16) };
         follow.Children.Add(Ui.Heading("当前方向")); follow.Children.Add(_direction); follow.Children.Add(_directionKind);
-        follow.Children.Add(Ui.Heading("同步字幕")); _caption.MinHeight = 50; follow.Children.Add(_caption);
+        follow.Children.Add(Ui.Heading("同步字幕")); _caption.MinHeight = 40; follow.Children.Add(_caption);
         _subtitleSource.Margin = new(0, 6, 0, 4); follow.Children.Add(_subtitleSource);
         follow.Children.Add(Ui.Command("\uE8A5", "导入字幕", ImportSubtitles));
         follow.Children.Add(Ui.Command("\uE894", "清除导入字幕", () => { _cues = []; _lastCaption = ""; _subtitleSource.Text = "网页字幕"; }));
@@ -229,7 +229,7 @@ public sealed partial class MainWindow : Window
         var controls = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         controls.Children.Add(Ui.Icon("\uE892", "上一集", () => Fire(() => CommandAsync("previousEpisode"))));
         controls.Children.Add(Ui.Icon("\uE72B", "后退视频", () => Fire(() => CommandAsync("seek", -_settings.SeekSeconds))));
-        _play = Ui.Icon("\uE768", "播放 / 暂停", () => Fire(() => CommandAsync("toggle"))); controls.Children.Add(_play);
+        _play = Ui.Icon("\uE768", "播放 / 暂停", () => Fire(() => CommandAsync("toggle")), primary: true); controls.Children.Add(_play);
         controls.Children.Add(Ui.Icon("\uE72A", "快进视频", () => Fire(() => CommandAsync("seek", _settings.SeekSeconds))));
         controls.Children.Add(Ui.Icon("\uE893", "下一集", () => Fire(() => CommandAsync("nextEpisode"))));
         playback.Children.Add(controls);
@@ -625,7 +625,7 @@ public sealed partial class MainWindow : Window
         // Refresh the WPF composition surface after changing a layered window's layout.
         _browser.Visibility = Visibility.Hidden;
         _immersive = !_immersive;
-        _root.Background = _immersive ? Brushes.Transparent : Brushes.White;
+        _root.Background = _immersive ? Brushes.Transparent : Ui.Canvas;
         _edgeProgress.Visibility = _immersive ? Visibility.Visible : Visibility.Collapsed;
         ApplyWindowOpacity();
         Topmost = _settings.ShouldBeTopmost(_immersive);
