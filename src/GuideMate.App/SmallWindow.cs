@@ -71,8 +71,11 @@ public sealed partial class MainWindow
 
     internal void ApplySmallWindowSettings()
     {
-        ApplyWindowOpacity(); UpdateSmallWindowLayout(); UpdateXRayTracking();
+        ApplyWindowOpacity(); UpdateSmallWindowLayout(); UpdateXRayTracking(); ApplyWindowSwitcher();
     }
+
+    private void ApplyWindowSwitcher() =>
+        NativeHotkeys.HideFromWindowSwitcher(this, _immersive && _settings.HideImmersiveFromAltTab);
 
     private void ApplyWindowOpacity()
     {

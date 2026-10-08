@@ -13,6 +13,7 @@ public sealed partial class MainWindow
         {
             var end = DateTime.UtcNow.AddSeconds(25);
             while (_duration < 20 || _navigationVersion == 0) { if (DateTime.UtcNow > end) throw new Exception("Sample video failed to load"); await Task.Delay(100); }
+            await VerifyWindowSwitcherAsync(checks);
             await VerifySmallWindowAsync(checks);
             await VerifyImmersiveFeedbackAsync(checks);
             WriteSmokeResult(true, "", checks);

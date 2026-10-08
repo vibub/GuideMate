@@ -28,6 +28,7 @@ public class AppSettings
     public WindowTopmostMode? TopmostMode { get; set; }
     public double Opacity { get; set; } = 1;
     public double? ImmersiveOpacity { get; set; }
+    public bool HideImmersiveFromAltTab { get; set; } = true;
     public bool FullscreenDanmaku { get; set; } = true;
     public double DanmakuDisplayArea { get; set; } = 1;
     public double DanmakuOpacity { get; set; } = 1;

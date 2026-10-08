@@ -89,7 +89,7 @@ public sealed partial class MainWindow : Window
         BuildUi();
         SourceInitialized += (_, _) =>
         {
-            Ui.PlaceVisible(this);
+            Ui.PlaceVisible(this); ApplyWindowSwitcher();
             _keys = new(this); _keys.Pressed += OnHotkey;
             _keys.TemporaryRateReleased += () => Fire(() => EndTemporaryRateAsync(true));
             var error = _keys.Apply(_settings.Hotkeys, _settings.TemporaryHoldMilliseconds);
@@ -652,7 +652,7 @@ public sealed partial class MainWindow : Window
             Width = _normalBounds.Width; Height = _normalBounds.Height; Left = _normalBounds.Left; Top = _normalBounds.Top;
             Fire(() => CommandAsync("focusOff"));
         }
-        UpdateClip(); UpdateDanmakuOverlay(); UpdateImmersiveControls();
+        ApplyWindowSwitcher(); UpdateClip(); UpdateDanmakuOverlay(); UpdateImmersiveControls();
         Dispatcher.InvokeAsync(() => { _browser.Visibility = Visibility.Visible; _browser.UpdateLayout(); UpdateSmallWindowLayout(); UpdateXRayTracking(); }, DispatcherPriority.Loaded);
     }
     private void ToggleHidden()
@@ -761,6 +761,7 @@ public sealed partial class MainWindow : Window
             }
             await VerifyTopmostAsync(checks);
             await VerifyWindowCommandsAsync(checks);
+            await VerifyWindowSwitcherAsync(checks);
             await VerifyImmersiveDragAsync(checks);
             await VerifySmallWindowAsync(checks);
             await VerifyImmersiveFeedbackAsync(checks);

@@ -287,6 +287,21 @@ internal sealed class NativeHotkeys : IDisposable
         _source.RemoveHook(OnMessage);
     }
 
+    public static void HideFromWindowSwitcher(Window window, bool hidden)
+    {
+        // ShowInTaskbar alone does not exclude an unowned window from Alt+Tab.
+        window.ShowInTaskbar = !hidden;
+        var hwnd = new WindowInteropHelper(window).Handle;
+        if (hwnd == 0) return;
+        const long toolWindow = 0x80, appWindow = 0x40000;
+        var style = GetWindowLongPtr(hwnd, -20).ToInt64();
+        var next = hidden ? (style | toolWindow) & ~appWindow : (style | appWindow) & ~toolWindow;
+        if (style == next) return;
+        SetWindowLongPtr(hwnd, -20, (nint)next);
+        // Refresh shell-visible styles without moving, resizing, activating or reordering the window.
+        SetWindowPos(hwnd, 0, 0, 0, 0, 0, 0x0037);
+    }
+
     public static void ClickThrough(Window window, bool enabled)
     {
         var hwnd = new WindowInteropHelper(window).Handle;
@@ -312,6 +327,7 @@ internal sealed class NativeHotkeys : IDisposable
     [DllImport("user32.dll")] private static extern bool UnregisterHotKey(nint hWnd, int id);
     [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int key);
     [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern bool SetWindowPos(nint hwnd, nint after, int x, int y, int width, int height, uint flags);
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern nint GetWindowLongPtr(nint hwnd, int index);
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static extern nint SetWindowLongPtr(nint hwnd, int index, nint value);
 }

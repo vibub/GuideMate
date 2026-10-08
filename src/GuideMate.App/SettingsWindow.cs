@@ -64,6 +64,10 @@ internal sealed class SettingsWindow : Window
         var danmakuSpeed = DanmakuSlider("弹幕速度", 0.5, 2, settings.DanmakuSpeed, 0.25,
             value => value == 1 ? "适中（1x）" : $"{value:0.##}x");
         panel = Section("沉浸小窗", "小窗");
+        var hideFromAltTab = Ui.Toggle("在 Alt+Tab 中隐藏沉浸小窗", settings.HideImmersiveFromAltTab, _ => { });
+        System.Windows.Automation.AutomationProperties.SetName(hideFromAltTab, "在 Alt+Tab 中隐藏沉浸小窗");
+        panel.Children.Add(hideFromAltTab);
+        panel.Children.Add(Ui.Text("隐藏时也移除任务栏按钮，可用托盘或“隐藏 / 恢复”热键找回。退出沉浸后恢复普通窗口入口。", 12, Ui.Muted));
         var opacityLabel = Ui.Text($"小窗透明度  {1 - settings.GetImmersiveOpacity():P0}", 12);
         panel.Children.Add(opacityLabel);
         var opacity = Ui.Slider(0, 0.8, 1 - settings.GetImmersiveOpacity(), value => opacityLabel.Text = $"小窗透明度  {value:P0}");
@@ -110,6 +114,7 @@ internal sealed class SettingsWindow : Window
             settings.DanmakuFontScale = danmakuFont.Value;
             settings.DanmakuSpeed = danmakuSpeed.Value;
             owner.ApplyDanmakuSettings();
+            settings.HideImmersiveFromAltTab = hideFromAltTab.IsChecked == true;
             settings.ImmersiveOpacity = 1 - opacity.Value;
             settings.XRayEnabled = xray.IsChecked == true;
             settings.XRayRadius = radius.Value;

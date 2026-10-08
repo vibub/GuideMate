@@ -13,7 +13,8 @@ internal sealed class SubtitleWindow : Window
     {
         Title = "随引字幕与方向";
         Width = 520; SizeToContent = SizeToContent.Height; MinWidth = 260; MinHeight = 56;
-        Topmost = true; ShowInTaskbar = false; WindowStyle = WindowStyle.None;
+        Topmost = true; ShowInTaskbar = false; ShowActivated = false; WindowStyle = WindowStyle.None;
+        SourceInitialized += (_, _) => NativeHotkeys.HideFromWindowSwitcher(this, true);
         AllowsTransparency = true; Background = Brushes.Transparent; ResizeMode = ResizeMode.CanResizeWithGrip;
         var grid = new Grid { Margin = new(14, 10, 14, 10) };
         grid.RowDefinitions.Add(new() { Height = GridLength.Auto });

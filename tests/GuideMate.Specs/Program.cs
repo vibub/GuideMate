@@ -37,6 +37,12 @@ store.Save(new AppSettings { Rate = 1.5, Bookmarks = [new() { Url = "https://exa
 var loaded = store.Load();
 Check(loaded.Rate == 1.5 && loaded.Bookmarks[0].Position == 12, "settings roundtrip");
 Check(loaded.FullscreenDanmaku, "existing profiles enable fullscreen danmaku by default");
+Check(loaded.HideImmersiveFromAltTab, "new profiles hide immersive windows from Alt+Tab by default");
+loaded.HideImmersiveFromAltTab = false; store.Save(loaded);
+Check(!store.Load().HideImmersiveFromAltTab && store.Load().Bookmarks[0].Position == 12 && store.Load().Rate == 1.5,
+    "Alt+Tab opt-out persists without resetting video data");
+loaded.HideImmersiveFromAltTab = true; store.Save(loaded);
+Check(store.Load().HideImmersiveFromAltTab, "Alt+Tab exclusion can be saved again");
 loaded.FullscreenDanmaku = false; store.Save(loaded);
 Check(!store.Load().FullscreenDanmaku && store.Load().Bookmarks[0].Position == 12 && store.Load().Rate == 1.5,
     "danmaku preference persists without resetting existing video data");
@@ -157,6 +163,8 @@ Check(migrated.Hotkeys["PlayPause"] == "Ctrl+Alt+Shift+K" && migrated.Hotkeys.Co
     && migrated.Hotkeys.ContainsKey("NextEpisode") && migrated.TemporaryRate == 2, "old settings preserve custom keys and gain new defaults");
 File.WriteAllText(Path.Combine(oldDir, "settings.json"), "{\"Opacity\":0.6,\"Hotkeys\":{\"Hide\":\"Ctrl+Shift+H\"}}");
 var oldAppearance = new SettingsStore(oldDir).Load();
+Check(oldAppearance.HideImmersiveFromAltTab && oldAppearance.Opacity == 0.6
+    && oldAppearance.Hotkeys["Hide"] == "Ctrl+Shift+H", "legacy profiles gain Alt+Tab exclusion without resetting opacity or custom hotkeys");
 Check(oldAppearance.ImmersiveOpacity == null && oldAppearance.GetImmersiveOpacity() == 0.6
     && oldAppearance.Hotkeys["Hide"] == "Ctrl+Shift+H", "legacy opacity and hide binding migrate without a forced new value");
 Check(oldAppearance.DanmakuDisplayArea == 1 && oldAppearance.DanmakuOpacity == 1
