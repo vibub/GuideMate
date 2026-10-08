@@ -166,6 +166,17 @@ File.WriteAllText(Path.Combine(oldDir, "settings.json"), "{\"Hotkeys\":{\"PlayPa
 var collision = new SettingsStore(oldDir).Load();
 Check(collision.Hotkeys["PlayPause"] == "Ctrl+Alt+Shift+V" && collision.Hotkeys["TemporaryRate"] != "Ctrl+Alt+Shift+V",
     "new hotkey defaults do not replace colliding existing user bindings");
+Check(migrated.Hotkeys["FullscreenDanmaku"] == "Ctrl+Alt+D", "legacy profiles gain the fullscreen danmaku shortcut");
+File.WriteAllText(Path.Combine(oldDir, "settings.json"), "{\"Hotkeys\":{\"PlayPause\":\"Ctrl+Alt+D\"}}");
+var danmakuCollision = new SettingsStore(oldDir).Load();
+Check(danmakuCollision.Hotkeys["PlayPause"] == "Ctrl+Alt+D" && danmakuCollision.Hotkeys["FullscreenDanmaku"] != "Ctrl+Alt+D"
+    && danmakuCollision.Hotkeys.Values.Distinct(StringComparer.OrdinalIgnoreCase).Count() == danmakuCollision.Hotkeys.Count,
+    "new danmaku default chooses a free fallback without changing a colliding user binding");
+danmakuCollision.Hotkeys["FullscreenDanmaku"] = "Ctrl+Shift+Mouse4"; danmakuCollision.FullscreenDanmaku = false;
+new SettingsStore(oldDir).Save(danmakuCollision);
+var customDanmaku = new SettingsStore(oldDir).Load();
+Check(customDanmaku.Hotkeys["FullscreenDanmaku"] == "Ctrl+Shift+Mouse4" && !customDanmaku.FullscreenDanmaku
+    && customDanmaku.Hotkeys["PlayPause"] == "Ctrl+Alt+D", "custom danmaku side-key and toggle persist without changing other bindings");
 foreach (var legacy in new[] { false, true })
 {
     File.WriteAllText(Path.Combine(oldDir, "settings.json"), System.Text.Json.JsonSerializer.Serialize(new { Topmost = legacy }));

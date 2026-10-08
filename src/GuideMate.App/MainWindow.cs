@@ -596,6 +596,11 @@ public sealed partial class MainWindow : Window
             case "PreviousEpisode": Fire(() => VideoHotkeyAsync("previousEpisode", null, "上一集", version)); break;
             case "NextEpisode": Fire(() => VideoHotkeyAsync("nextEpisode", null, "下一集", version)); break;
             case "Immersive": ToggleImmersive(); ShowHotkeyFeedback("沉浸模式", _hotkeyFeedbackVersion); break;
+            case "FullscreenDanmaku":
+                _settings.FullscreenDanmaku = !_settings.FullscreenDanmaku;
+                ApplyDanmakuSettings(); SaveSettings();
+                ShowHotkeyFeedback(_settings.FullscreenDanmaku ? "全屏弹幕：开" : "全屏弹幕：关", version);
+                break;
             case "Hide": ToggleHidden(); ShowHotkeyFeedback("已恢复", _hotkeyFeedbackVersion); break;
             case "ClickThrough":
                 var through = !_through;

@@ -74,6 +74,7 @@ public class AppSettings
         ["PreviousEpisode"] = "Ctrl+Alt+PageUp",
         ["NextEpisode"] = "Ctrl+Alt+PageDown",
         ["Immersive"] = "Ctrl+Alt+Shift+I",
+        ["FullscreenDanmaku"] = "Ctrl+Alt+D",
         ["Hide"] = "Ctrl+Alt+H",
         ["ClickThrough"] = "Ctrl+Alt+P"
     };

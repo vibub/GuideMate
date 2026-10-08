@@ -8,7 +8,7 @@ internal sealed class SettingsWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner; Background = Brushes.White;
         var panel = new StackPanel { Margin = new(22) };
         panel.Children.Add(Ui.Heading("全局热键"));
-        var names = new Dictionary<string, string> { ["PlayPause"] = "播放 / 暂停", ["SeekBack"] = "后退", ["SeekForward"] = "快进", ["RateUp"] = "加快倍速", ["RateDown"] = "降低倍速", ["TemporaryRate"] = "长按临时倍速", ["PreviousEpisode"] = "上一集", ["NextEpisode"] = "下一集", ["Immersive"] = "沉浸模式", ["Hide"] = "隐藏 / 恢复", ["ClickThrough"] = "鼠标穿透" };
+        var names = new Dictionary<string, string> { ["PlayPause"] = "播放 / 暂停", ["SeekBack"] = "后退", ["SeekForward"] = "快进", ["RateUp"] = "加快倍速", ["RateDown"] = "降低倍速", ["TemporaryRate"] = "长按临时倍速", ["PreviousEpisode"] = "上一集", ["NextEpisode"] = "下一集", ["Immersive"] = "沉浸模式", ["FullscreenDanmaku"] = "全屏弹幕开关", ["Hide"] = "隐藏 / 恢复", ["ClickThrough"] = "鼠标穿透" };
         var fields = new Dictionary<string, TextBox>();
         var error = Ui.Text("", 12, Brushes.Firebrick); error.Margin = new(0, 10, 0, 8);
         void RecordingChanged(bool recording)

@@ -76,14 +76,22 @@ public sealed partial class MainWindow
                 await Wait(() => overlay.CommentCount == 4, "appearance tests restore original live source snapshot");
             }
             var hotkeys = JsonSerializer.Serialize(_settings.Hotkeys);
-            _settings.FullscreenDanmaku = false; ApplyDanmakuSettings(); SaveSettings();
+            void PressDanmakuKey() => _keys!.ProcessKeyboardPress(NativeHotkeys.Parse(_settings.Hotkeys["FullscreenDanmaku"]),
+                NativeHotkeys.CurrentForegroundWindow, Environment.TickCount64);
+            PressDanmakuKey();
+            Check(_hotkeyFeedbackText.Text == "全屏弹幕：关", "keyboard toggle shows disabled preference feedback");
             Check(!overlay.IsVisible && !_store.Load().FullscreenDanmaku, "disable persists and immediately hides overlay");
-            _settings.FullscreenDanmaku = true; ApplyDanmakuSettings(); SaveSettings();
+            PressDanmakuKey();
+            Check(_hotkeyFeedbackText.Text == "全屏弹幕：开", "keyboard toggle shows enabled preference feedback");
             Check(_store.Load().FullscreenDanmaku && JsonSerializer.Serialize(_settings.Hotkeys) == hotkeys,
                 "enable persists without changing custom hotkeys");
             await Wait(() => overlay.CommentCount > 0, "restore repopulates active comments");
             HideToTray();
             Check(!overlay.IsVisible && overlay.CommentCount == 0, "hide clears desktop comments");
+            PressDanmakuKey();
+            Check(!_store.Load().FullscreenDanmaku && !overlay.IsVisible, "keyboard toggle disables and saves while hidden");
+            PressDanmakuKey();
+            Check(_store.Load().FullscreenDanmaku && !overlay.IsVisible, "keyboard toggle enables preference without exposing hidden window");
             RestoreMainWindow(); await Wait(() => overlay.IsVisible && overlay.CommentCount > 0, "restore resumes same page and comments");
             WindowState = WindowState.Minimized;
             Check(!overlay.IsVisible, "minimize hides desktop comments");
@@ -92,6 +100,9 @@ public sealed partial class MainWindow
             {
                 await _browser.CoreWebView2.ExecuteScriptAsync("player.danmaku.getDanmakuX().visible=false");
                 await Wait(() => !overlay.IsVisible && overlay.CommentCount == 0, "native Bilibili switch clears full-screen layer");
+                PressDanmakuKey(); PressDanmakuKey();
+                Check(_settings.FullscreenDanmaku && !overlay.IsVisible && !_danmakuSourceEnabled,
+                    "host keyboard toggle leaves Bilibili's disabled source unchanged");
                 await _browser.CoreWebView2.ExecuteScriptAsync("player.danmaku.getDanmakuX().visible=true");
                 await Wait(() => overlay.IsVisible, "native Bilibili switch restores full-screen layer");
             }
@@ -104,6 +115,10 @@ public sealed partial class MainWindow
             await Wait(() => Math.Abs(_position - 18) < 0.3, "seek rebases playback clock");
             ToggleImmersive();
             Check(!overlay.IsVisible && overlay.CommentCount == 0, "exit immersive clears full-screen comments");
+            PressDanmakuKey();
+            Check(!_settings.FullscreenDanmaku && !overlay.IsVisible, "normal-mode keyboard toggle disables preference only");
+            PressDanmakuKey();
+            Check(_settings.FullscreenDanmaku && !overlay.IsVisible, "normal-mode keyboard toggle does not open immersive layer");
             ToggleImmersive(); await Wait(() => overlay.IsVisible, "reenter resumes source");
             Navigate("https://guidemate.local/demo.html");
             Check(!overlay.IsVisible && overlay.CommentCount == 0, "navigation immediately discards previous comments");

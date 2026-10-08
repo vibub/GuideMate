@@ -22,7 +22,9 @@ public sealed partial class MainWindow
         (double, double, double, double) Values(AppSettings value) =>
             (value.DanmakuDisplayArea, value.DanmakuOpacity, value.DanmakuFontScale, value.DanmakuSpeed);
         var original = Values(_settings);
-        var hotkeys = JsonSerializer.Serialize(_settings.Hotkeys);
+        var originalBindings = new Dictionary<string, string>(_settings.Hotkeys);
+        string OtherBindings(Dictionary<string, string> bindings) => JsonSerializer.Serialize(bindings.Where(pair => pair.Key != "FullscreenDanmaku"));
+        var hotkeys = OtherBindings(_settings.Hotkeys);
         var bookmarks = JsonSerializer.Serialize(_settings.Bookmarks);
         var opacity = _settings.GetImmersiveOpacity();
         var url = _url;
@@ -30,9 +32,18 @@ public sealed partial class MainWindow
         SettingsWindow? dialog = null;
         try
         {
-            dialog = new SettingsWindow(this, _settings, _keys!, (bindings, hold) => _keys!.Apply(bindings, hold));
+            dialog = new SettingsWindow(this, _settings, _keys!, (bindings, hold) =>
+            {
+                var error = _keys!.Apply(bindings, hold);
+                if (error == null) _settings.Hotkeys = bindings;
+                return error;
+            });
             dialog.Show(); await Task.Delay(100);
             dialog.Width = 400;
+            var shortcut = Descendants<HotkeyRecorder>(dialog).Single(field => AutomationProperties.GetName(field) == "全屏弹幕开关热键");
+            Check(shortcut.Text == originalBindings["FullscreenDanmaku"], "danmaku hotkey recorder displays the saved binding");
+            shortcut.Text = "Ctrl+Shift+Mouse4";
+            Check(_settings.Hotkeys["FullscreenDanmaku"] == originalBindings["FullscreenDanmaku"], "hotkey recorder edit remains pending until save");
             var names = new[] { "显示区域", "不透明度", "弹幕字号", "弹幕速度" };
             var controls = names.Select(name => Descendants<Slider>(dialog).Single(slider => AutomationProperties.GetName(slider) == name)).ToArray();
             var changed = new[] { 0.3, 0.5, 1.5, 1.75 };
@@ -60,15 +71,36 @@ public sealed partial class MainWindow
             dialog = null;
             Check(Values(_settings) == (0.3, 0.5, 1.5, 1.75), "saving applies all four danmaku preferences together");
             Check(Values(_store.Load()) == Values(_settings), "saved danmaku preferences survive settings reload");
-            Check(JsonSerializer.Serialize(_settings.Hotkeys) == hotkeys && JsonSerializer.Serialize(_settings.Bookmarks) == bookmarks
+            Check(OtherBindings(_settings.Hotkeys) == hotkeys && JsonSerializer.Serialize(_settings.Bookmarks) == bookmarks
                 && _settings.GetImmersiveOpacity() == opacity && _url == url,
                 "saving danmaku leaves custom bindings, bookmarks, window opacity and current page intact");
+            Check(_settings.Hotkeys["FullscreenDanmaku"] == "Ctrl+Shift+Mouse4"
+                && _store.Load().Hotkeys["FullscreenDanmaku"] == "Ctrl+Shift+Mouse4", "saving settings registers and persists custom danmaku side-key");
             var saved = Values(_settings);
             dialog = new SettingsWindow(this, _settings, _keys!, (_, _) => throw new Exception("Cancel invoked save"));
             dialog.Show(); await Task.Delay(100);
+            Descendants<HotkeyRecorder>(dialog).Single(field => AutomationProperties.GetName(field) == "全屏弹幕开关热键").Text = "Ctrl+Alt+Shift+D";
             foreach (var name in names) Descendants<Slider>(dialog).Single(slider => AutomationProperties.GetName(slider) == name).Value = 1;
             dialog.Close(); dialog = null;
             Check(Values(_settings) == saved && Values(_store.Load()) == saved, "closing without save discards all four slider edits");
+
+            Check(_settings.Hotkeys["FullscreenDanmaku"] == "Ctrl+Shift+Mouse4"
+                && _store.Load().Hotkeys["FullscreenDanmaku"] == "Ctrl+Shift+Mouse4", "closing without save also discards danmaku shortcut edits");
+            var foreground = NativeHotkeys.CurrentForegroundWindow;
+            Check(_keys!.ProcessMouseButton(5, true, 6, foreground), "custom danmaku side-key down is consumed");
+            await Task.Delay(100);
+            Check(_keys.ProcessMouseButton(5, false, 6, foreground) && !_settings.FullscreenDanmaku
+                && !overlay.IsVisible && !_store.Load().FullscreenDanmaku, "custom side-key dispatch disables and saves desktop overlay");
+            Check(!_keys.ProcessMouseButton(6, true, 6, foreground), "unbound side-key remains passthrough");
+            _keys.SuspendOrdinaryBindings();
+            Check(!_keys.ProcessMouseButton(5, true, 6, foreground) && !_settings.FullscreenDanmaku,
+                "recording suspension leaves danmaku shortcut inactive");
+            var restore = _keys.ResumeOrdinaryBindings();
+            Check(restore == null, "recording restores custom danmaku shortcut");
+            Check(_keys.ProcessMouseButton(5, true, 6, foreground), "custom danmaku side-key can be pressed again");
+            await Task.Delay(100);
+            Check(_keys.ProcessMouseButton(5, false, 6, foreground) && _settings.FullscreenDanmaku
+                && overlay.IsVisible && _store.Load().FullscreenDanmaku, "second side-key dispatch enables and saves desktop overlay");
 
             // Feed deterministic timestamps synchronously to the actual desktop surface;
             // no physical input or real-site behavior is inferred from these pixel checks.
@@ -124,6 +156,9 @@ public sealed partial class MainWindow
         {
             dialog?.Close();
             (_settings.DanmakuDisplayArea, _settings.DanmakuOpacity, _settings.DanmakuFontScale, _settings.DanmakuSpeed) = original;
+            _settings.Hotkeys = originalBindings;
+            var restoreError = _keys!.Apply(originalBindings, _settings.TemporaryHoldMilliseconds);
+            if (restoreError != null) throw new Exception("Cannot restore original bindings: " + restoreError);
             ApplyDanmakuSettings(); overlay.Clear(); SaveSettings();
         }
     }
