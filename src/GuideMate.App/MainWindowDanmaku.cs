@@ -22,6 +22,8 @@ public sealed partial class MainWindow
         _danmakuOverlay ??= new DanmakuWindow();
         if (!_danmakuOverlay.IsVisible) _danmakuOverlay.Show();
         _danmakuOverlay.FitToMonitor(this);
+        _danmakuOverlay.Configure(_settings.DanmakuDisplayArea, _settings.DanmakuOpacity,
+            _settings.DanmakuFontScale, _settings.DanmakuSpeed);
     }
 
     private void ResetDanmaku()

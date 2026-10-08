@@ -29,6 +29,10 @@ public class AppSettings
     public double Opacity { get; set; } = 1;
     public double? ImmersiveOpacity { get; set; }
     public bool FullscreenDanmaku { get; set; } = true;
+    public double DanmakuDisplayArea { get; set; } = 1;
+    public double DanmakuOpacity { get; set; } = 1;
+    public double DanmakuFontScale { get; set; } = 1;
+    public double DanmakuSpeed { get; set; } = 1;
     public bool XRayEnabled { get; set; }
     public double XRayRadius { get; set; } = 70;
     public double HoleRatio { get; set; } = 0.3;

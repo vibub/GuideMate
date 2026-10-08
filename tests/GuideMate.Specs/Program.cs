@@ -40,6 +40,25 @@ Check(loaded.FullscreenDanmaku, "existing profiles enable fullscreen danmaku by 
 loaded.FullscreenDanmaku = false; store.Save(loaded);
 Check(!store.Load().FullscreenDanmaku && store.Load().Bookmarks[0].Position == 12 && store.Load().Rate == 1.5,
     "danmaku preference persists without resetting existing video data");
+Check(loaded.DanmakuDisplayArea == 1 && loaded.DanmakuOpacity == 1 && loaded.DanmakuFontScale == 1 && loaded.DanmakuSpeed == 1,
+    "new danmaku appearance defaults preserve previous full-screen behavior");
+loaded.Hotkeys["Hide"] = "Ctrl+Shift+H";
+loaded.DanmakuDisplayArea = 0.3; loaded.DanmakuOpacity = 0.5; loaded.DanmakuFontScale = 1.5; loaded.DanmakuSpeed = 1.75;
+store.Save(loaded);
+var danmakuReload = store.Load();
+Check(danmakuReload.DanmakuDisplayArea == 0.3 && danmakuReload.DanmakuOpacity == 0.5
+    && danmakuReload.DanmakuFontScale == 1.5 && danmakuReload.DanmakuSpeed == 1.75, "four danmaku appearance fields survive reload");
+Check(danmakuReload.Hotkeys["Hide"] == "Ctrl+Shift+H" && danmakuReload.Bookmarks[0].Position == 12
+    && danmakuReload.Rate == 1.5 && danmakuReload.Opacity == 1 && !danmakuReload.FullscreenDanmaku,
+    "danmaku appearance preserves hotkeys, bookmarks, playback and independent window opacity");
+File.WriteAllText(Path.Combine(temp, "settings.json"), "{\"DanmakuDisplayArea\":0,\"DanmakuOpacity\":-1,\"DanmakuFontScale\":0,\"DanmakuSpeed\":0}");
+var lowDanmaku = store.Load();
+Check(lowDanmaku.DanmakuDisplayArea == 0.1 && lowDanmaku.DanmakuOpacity == 0
+    && lowDanmaku.DanmakuFontScale == 0.5 && lowDanmaku.DanmakuSpeed == 0.5, "danmaku appearance lower bounds normalize on load");
+File.WriteAllText(Path.Combine(temp, "settings.json"), "{\"DanmakuDisplayArea\":3,\"DanmakuOpacity\":3,\"DanmakuFontScale\":3,\"DanmakuSpeed\":3}");
+var highDanmaku = store.Load();
+Check(highDanmaku.DanmakuDisplayArea == 1 && highDanmaku.DanmakuOpacity == 1
+    && highDanmaku.DanmakuFontScale == 2 && highDanmaku.DanmakuSpeed == 2, "danmaku appearance upper bounds normalize on load");
 Check(loaded.GetImmersiveOpacity() == loaded.Opacity && !loaded.XRayEnabled && loaded.XRayRadius == 70,
     "new small-window defaults inherit opacity without enabling X-ray");
 loaded.Opacity = 0.75; loaded.ImmersiveOpacity = 0.45; loaded.XRayEnabled = true; loaded.XRayRadius = 95;
@@ -140,6 +159,9 @@ File.WriteAllText(Path.Combine(oldDir, "settings.json"), "{\"Opacity\":0.6,\"Hot
 var oldAppearance = new SettingsStore(oldDir).Load();
 Check(oldAppearance.ImmersiveOpacity == null && oldAppearance.GetImmersiveOpacity() == 0.6
     && oldAppearance.Hotkeys["Hide"] == "Ctrl+Shift+H", "legacy opacity and hide binding migrate without a forced new value");
+Check(oldAppearance.DanmakuDisplayArea == 1 && oldAppearance.DanmakuOpacity == 1
+    && oldAppearance.DanmakuFontScale == 1 && oldAppearance.DanmakuSpeed == 1
+    && oldAppearance.Hotkeys["Hide"] == "Ctrl+Shift+H", "legacy JSON without danmaku fields retains appearance and custom binding");
 File.WriteAllText(Path.Combine(oldDir, "settings.json"), "{\"Hotkeys\":{\"PlayPause\":\"Ctrl+Alt+Shift+V\"}}");
 var collision = new SettingsStore(oldDir).Load();
 Check(collision.Hotkeys["PlayPause"] == "Ctrl+Alt+Shift+V" && collision.Hotkeys["TemporaryRate"] != "Ctrl+Alt+Shift+V",

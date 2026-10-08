@@ -50,6 +50,7 @@ internal sealed class DanmakuWindow : Window
     }
 
     public void Update(JsonElement items, double time, bool paused, double rate) => _surface.Update(items, time, paused, rate);
+    public void Configure(double area, double opacity, double fontScale, double speed) => _surface.Configure(area, opacity, fontScale, speed);
     public void Clear() => _surface.Clear();
     internal FrameworkElement Surface => _surface;
 
@@ -69,11 +70,31 @@ internal sealed class DanmakuWindow : Window
         private double _time, _rate = 1;
         private bool _paused = true, _rendering;
         private int _nextRow;
-        private const double RowHeight = 42;
+        private sealed record Appearance(double Area, double Opacity, double FontScale, double Speed);
+        private Appearance _appearance = new(1, 1, 1, 1);
+        private double RowHeight => 42 * _appearance.FontScale;
+        private double AreaHeight => ActualHeight * _appearance.Area;
+        private double ScrollSpeed => ActualWidth / 8 * _appearance.Speed;
         public int CommentCount => _comments.Count;
         public double MediaTime => _time + (_paused ? 0 : _clock.Elapsed.TotalSeconds * _rate);
 
         public DanmakuSurface() { IsHitTestVisible = false; ClipToBounds = true; _outline.Freeze(); }
+
+        public void Configure(double area, double opacity, double fontScale, double speed)
+        {
+            var appearance = new Appearance(area, opacity, fontScale, speed);
+            if (_appearance == appearance) return;
+            _appearance = appearance;
+            Opacity = opacity;
+            // Rebuild active geometry and lane assignments from the next source snapshot.
+            Clear();
+        }
+
+        protected override void OnRenderSizeChanged(SizeChangedInfo sizeInfo)
+        {
+            base.OnRenderSizeChanged(sizeInfo);
+            Clear();
+        }
 
         public void SetVisible(bool visible)
         {
@@ -113,10 +134,10 @@ internal sealed class DanmakuWindow : Window
                 var text = textValue.GetString() ?? "";
                 if (id.Length == 0 || text.Length == 0 || text.Length > 200) continue;
                 current.Add(id);
-                if (!_seen.Add(id) || _comments.Count >= 120 || ActualWidth < 1 || ActualHeight < RowHeight) continue;
+                if (!_seen.Add(id) || _comments.Count >= 120 || ActualWidth < 1 || AreaHeight < 24) continue;
                 var mode = item.TryGetProperty("mode", out var modeValue) && modeValue.ValueKind == JsonValueKind.Number && modeValue.TryGetInt32(out var value) ? value : 1;
                 if (mode is < 1 or > 6) continue;
-                var size = Math.Clamp(Number(item, "size", 25), 18, 36);
+                var size = Math.Clamp(Number(item, "size", 25), 18, 36) * _appearance.FontScale;
                 var color = (int)Math.Clamp(Number(item, "color", 0xffffff), 0, 0xffffff);
                 var brush = new SolidColorBrush(System.Windows.Media.Color.FromRgb((byte)(color >> 16), (byte)(color >> 8), (byte)color));
                 brush.Freeze();
@@ -125,8 +146,9 @@ internal sealed class DanmakuWindow : Window
                 var geometry = formatted.BuildGeometry(new Point(0, 0)); geometry.Freeze();
                 var width = Math.Max(1, formatted.WidthIncludingTrailingWhitespace);
                 var start = time - Math.Clamp(Number(item, "offset", 0), 0, 4);
-                var duration = mode is 4 or 5 ? 5 : (ActualWidth + width) / (ActualWidth / 8);
-                var rows = Math.Max(1, (int)((ActualHeight - 24) / RowHeight));
+                var duration = mode is 4 or 5 ? 5 / _appearance.Speed : (ActualWidth + width) / ScrollSpeed;
+                if (time - start >= duration) continue;
+                var rows = Math.Max(1, (int)((AreaHeight - 24) / RowHeight));
                 for (var i = 0; i < rows; i++)
                 {
                     var row = mode == 5 ? i : mode == 4 ? rows - i - 1 : (_nextRow + i) % rows;
@@ -146,16 +168,17 @@ internal sealed class DanmakuWindow : Window
             && value.TryGetDouble(out var number) && double.IsFinite(number) ? number : fallback;
 
         private double X(Comment comment) => comment.Mode is 4 or 5 ? (ActualWidth - comment.Width) / 2
-            : comment.Mode == 6 ? -comment.Width + (MediaTime - comment.Start) * ActualWidth / 8
-            : ActualWidth - (MediaTime - comment.Start) * ActualWidth / 8;
+            : comment.Mode == 6 ? -comment.Width + (MediaTime - comment.Start) * ScrollSpeed
+            : ActualWidth - (MediaTime - comment.Start) * ScrollSpeed;
 
         private bool HasRoom(Comment previous, double width, double start, int mode) =>
-            mode == 6 ? X(previous) >= -width + (MediaTime - start) * ActualWidth / 8 + width + 28
-                : X(previous) + previous.Width + 28 <= ActualWidth - (MediaTime - start) * ActualWidth / 8;
+            mode == 6 ? X(previous) >= -width + (MediaTime - start) * ScrollSpeed + width + 28
+                : X(previous) + previous.Width + 28 <= ActualWidth - (MediaTime - start) * ScrollSpeed;
 
         protected override void OnRender(DrawingContext drawing)
         {
             base.OnRender(drawing);
+            drawing.PushClip(new RectangleGeometry(new Rect(0, 0, ActualWidth, AreaHeight)));
             foreach (var comment in _comments)
             {
                 drawing.PushTransform(new TranslateTransform(X(comment), 12 + comment.Row * RowHeight));
@@ -163,6 +186,7 @@ internal sealed class DanmakuWindow : Window
                 drawing.DrawGeometry(comment.Color, null, comment.Text);
                 drawing.Pop();
             }
+            drawing.Pop();
         }
     }
 }

@@ -18,6 +18,10 @@ public sealed class SettingsStore(string directory)
             settings.Opacity = Math.Clamp(settings.Opacity, 0.2, 1);
             if (settings.ImmersiveOpacity is { } opacity)
                 settings.ImmersiveOpacity = double.IsFinite(opacity) ? Math.Clamp(opacity, 0.2, 1) : null;
+            settings.DanmakuDisplayArea = double.IsFinite(settings.DanmakuDisplayArea) ? Math.Clamp(settings.DanmakuDisplayArea, 0.1, 1) : 1;
+            settings.DanmakuOpacity = double.IsFinite(settings.DanmakuOpacity) ? Math.Clamp(settings.DanmakuOpacity, 0, 1) : 1;
+            settings.DanmakuFontScale = double.IsFinite(settings.DanmakuFontScale) ? Math.Clamp(settings.DanmakuFontScale, 0.5, 2) : 1;
+            settings.DanmakuSpeed = double.IsFinite(settings.DanmakuSpeed) ? Math.Clamp(settings.DanmakuSpeed, 0.5, 2) : 1;
             settings.XRayRadius = double.IsFinite(settings.XRayRadius) ? Math.Clamp(settings.XRayRadius, 20, 200) : 70;
             settings.Rate = Math.Clamp(settings.Rate, 0.25, 4);
             settings.SeekSeconds = Math.Clamp(settings.SeekSeconds, 1, 120);

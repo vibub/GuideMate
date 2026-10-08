@@ -70,6 +70,11 @@ public sealed partial class MainWindow
             using (var output = File.Create(Path.Combine(_dataPath, "danmaku-overlay.png"))) encoder.Save(output);
             await using (var output = File.Create(Path.Combine(_dataPath, "danmaku-player.png")))
                 await _browser.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, output);
+            if (_danmakuLiveUrl == null)
+            {
+                await VerifyDanmakuAppearanceAsync(checks);
+                await Wait(() => overlay.CommentCount == 4, "appearance tests restore original live source snapshot");
+            }
             var hotkeys = JsonSerializer.Serialize(_settings.Hotkeys);
             _settings.FullscreenDanmaku = false; ApplyDanmakuSettings(); SaveSettings();
             Check(!overlay.IsVisible && !_store.Load().FullscreenDanmaku, "disable persists and immediately hides overlay");

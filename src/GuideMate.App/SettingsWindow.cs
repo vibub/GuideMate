@@ -30,11 +30,29 @@ internal sealed class SettingsWindow : Window
             Grid.SetColumn(field, 1); row.Children.Add(field); fields[pair.Key] = field; panel.Children.Add(row);
         }
         panel.Children.Add(Ui.Text("紧急恢复：" + keys.EmergencyBinding, 12, Ui.Green));
-        panel.Children.Add(Ui.Heading("沉浸小窗"));
+        panel.Children.Add(Ui.Heading("全屏弹幕"));
         var danmaku = Ui.Toggle("B 站全屏弹幕", settings.FullscreenDanmaku, _ => { });
         System.Windows.Automation.AutomationProperties.SetName(danmaku, "B 站全屏弹幕");
         panel.Children.Add(danmaku);
         panel.Children.Add(Ui.Text("进入沉浸后铺满小窗所在屏幕，鼠标操作穿透。沿用 B 站弹幕开关与屏蔽结果。", 12, Ui.Muted));
+        Slider DanmakuSlider(string name, double min, double max, double value, double tick, Func<double, string> format)
+        {
+            var label = Ui.Text(name + "  " + format(value), 12);
+            label.Margin = new(0, 10, 0, 0); panel.Children.Add(label);
+            var slider = Ui.Slider(min, max, value, next => label.Text = name + "  " + format(next));
+            slider.TickFrequency = tick; slider.IsSnapToTickEnabled = true;
+            slider.SmallChange = tick; slider.LargeChange = tick;
+            System.Windows.Automation.AutomationProperties.SetName(slider, name);
+            panel.Children.Add(slider);
+            return slider;
+        }
+        var danmakuArea = DanmakuSlider("显示区域", 0.1, 1, settings.DanmakuDisplayArea, 0.1, value => $"{value:P0}");
+        panel.Children.Add(Ui.Text("从屏幕顶部向下分配弹幕区域，底部固定弹幕也在此范围内。", 12, Ui.Muted));
+        var danmakuOpacity = DanmakuSlider("不透明度", 0, 1, settings.DanmakuOpacity, 0.05, value => $"{value:P0}");
+        var danmakuFont = DanmakuSlider("弹幕字号", 0.5, 2, settings.DanmakuFontScale, 0.1, value => $"{value:P0}");
+        var danmakuSpeed = DanmakuSlider("弹幕速度", 0.5, 2, settings.DanmakuSpeed, 0.25,
+            value => value == 1 ? "适中（1x）" : $"{value:0.##}x");
+        panel.Children.Add(Ui.Heading("沉浸小窗"));
         var opacityLabel = Ui.Text($"小窗透明度  {1 - settings.GetImmersiveOpacity():P0}", 12);
         panel.Children.Add(opacityLabel);
         var opacity = Ui.Slider(0, 0.8, 1 - settings.GetImmersiveOpacity(), value => opacityLabel.Text = $"小窗透明度  {value:P0}");
@@ -75,6 +93,10 @@ internal sealed class SettingsWindow : Window
             settings.SeekSeconds = seconds;
             settings.TemporaryRate = (double)temporaryRate.SelectedItem;
             settings.FullscreenDanmaku = danmaku.IsChecked == true;
+            settings.DanmakuDisplayArea = danmakuArea.Value;
+            settings.DanmakuOpacity = danmakuOpacity.Value;
+            settings.DanmakuFontScale = danmakuFont.Value;
+            settings.DanmakuSpeed = danmakuSpeed.Value;
             owner.ApplyDanmakuSettings();
             settings.ImmersiveOpacity = 1 - opacity.Value;
             settings.XRayEnabled = xray.IsChecked == true;
