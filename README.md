@@ -8,11 +8,13 @@ Windows 攻略视频跟随工具：置顶小窗、全局热键、鼠标穿透、
 
 支持 Windows 10 1809 及以上、Windows 11（x64），运行需要 [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
 
-**使用发布包**：从 GitHub 仓库的 Releases 下载 `GuideMate-版本-win-x64.zip`，完整解压后双击 `Start-GuideMate.cmd` 或 `GuideMate.exe`。不要只取出单个 EXE。自包含发布包不需要安装 .NET SDK。
+**使用发布包**：从 GitHub 仓库的 Releases 下载 `GuideMate-版本-win-x64.zip`，完整解压后双击 `Start-GuideMate.cmd` 或 `GuideMate.exe`。不要只取出单个 EXE。运行库内置于主程序 `GuideMate.exe` 和 `chrome-host/GuideMate.ChromeHost.exe`，不需要安装 .NET 运行时或 SDK；视频素材、浏览器扩展及说明仍随包提供。
 
 **从源码运行**：安装 [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)，在 Windows 上克隆源码后双击根目录的 `Start-GuideMate.cmd`。有本地发布目录时直接启动；否则编译 Release。命令行可用 `./scripts/Start-GuideMate.ps1 -Build` 强制从源码构建。
 
-更新前正常退出随引，只替换程序与资源，保留原来的用户资料。首次启动默认打开 B 站；已有用户继续使用已记录的热键、窗口状态、校准和浏览器资料。
+首次运行会将必要的原生库解包到 `%TEMP%\.net`，后续启动复用缓存；运行库不启用压缩。
+
+更新前正常退出随引，只替换程序与资源，保留原来的用户资料。旧版本含有大量 DLL 时，将新版完整解压到新的程序目录，避免覆盖解压留下旧运行库；新目录中的程序仍沿用已记录的用户资料目录。首次启动默认打开 B 站；已有用户继续使用已记录的热键、窗口状态、校准和浏览器资料。
 
 默认打开 B 站首页 `https://www.bilibili.com/`。右上方文件夹按钮可打开本地视频，地址栏可打开其他网页；侧栏的“打开验证样例”仍可加载 40 秒离线测试视频。支持顶层及同源/跨域/嵌套 iframe 的 HTML5 视频控制，仍受网站、沙箱和媒体权限限制。字幕可来自网页，也可导入 SRT、VTT、B 站 JSON。在 B 站播放器中开启字幕后，随引同步当前文字到侧栏及浮窗，支持新版 AI 字幕、双语字幕和旧版播放器；关闭网页字幕后清空同步文字。沉浸模式仍同步，菜单及 AI 图标不作为字幕。导入字幕优先，切换视频后清除。
 
