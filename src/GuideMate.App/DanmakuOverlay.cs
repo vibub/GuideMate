@@ -134,10 +134,10 @@ internal sealed class DanmakuOverlay : IDisposable
             var showing = !window.IsVisible;
             if (showing) window.Show();
             var appearance = (state.Bounds, state.Area, state.Opacity, state.FontScale, state.Speed);
-            var changed = _appearance != appearance || _generation != state.Generation;
+            var monitorChanged = window.FitToMonitor(state.Bounds);
+            var changed = monitorChanged || _appearance != appearance || _generation != state.Generation;
             if (changed || showing)
             {
-                window.FitToMonitor(state.Bounds);
                 window.Configure(state.Area, state.Opacity, state.FontScale, state.Speed);
                 window.Clear();
                 _appearance = appearance; _generation = state.Generation;

@@ -13,6 +13,7 @@ internal sealed class DanmakuWindow
 {
     private nint _handle;
     private System.Drawing.Rectangle _bounds;
+    private double _dpi = 1;
     private DanmakuComposition? _composition;
     private DanmakuSurface? _surface;
     public Dispatcher Dispatcher { get; } = Dispatcher.CurrentDispatcher;
@@ -55,14 +56,17 @@ internal sealed class DanmakuWindow
         if (_handle != 0) { DestroyWindow(_handle); _handle = 0; }
     }
 
-    public void FitToMonitor(System.Drawing.Rectangle screen)
+    public bool FitToMonitor(System.Drawing.Rectangle screen)
     {
-        if (_handle == 0 || _bounds == screen) return;
-        if (!SetWindowPos(_handle, -1, screen.Left, screen.Top, screen.Width, screen.Height, 0x0210))
+        if (_handle == 0) return false;
+        var moved = _bounds != screen;
+        if (moved && !SetWindowPos(_handle, -1, screen.Left, screen.Top, screen.Width, screen.Height, 0x0210))
             throw new Win32Exception(Marshal.GetLastWin32Error());
-        _bounds = screen;
         var dpi = GetDpiForWindow(_handle) / 96d;
+        if (!moved && _dpi == dpi) return false;
+        _bounds = screen; _dpi = dpi;
         _surface!.Resize(screen.Width / dpi, screen.Height / dpi, dpi);
+        return true;
     }
 
     public void Update(JsonElement items, double time, bool paused, double rate) => _surface?.Update(items, time, paused, rate);
