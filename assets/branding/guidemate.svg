@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">随引 · GuideMate</title>
+  <desc id="desc">松绿色圆角方形中，白色悬浮窗口与薄荷绿指引箭头组成字母 G 的开放轮廓。</desc>
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="#137C66"/>
+  <path d="M250 142H164C139.699 142 120 161.699 120 186V326C120 350.301 139.699 370 164 370H328C352.301 370 372 350.301 372 326V282H290" stroke="#FFFFFF" stroke-width="32" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M394 112L346 248L306 200L258 160L394 112Z" fill="#BBF7D0" stroke="#BBF7D0" stroke-width="12" stroke-linejoin="round"/>
+</svg>

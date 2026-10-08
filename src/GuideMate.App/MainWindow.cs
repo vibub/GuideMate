@@ -80,6 +80,7 @@ public sealed partial class MainWindow : Window
         _onlineVisionLiveUrl = onlineVisionLiveUrl;
         _danmakuProbe = danmakuProbe; _danmakuLiveUrl = danmakuLiveUrl;
         _store = new(dataPath); _settings = _store.Load();
+        Icon = new System.Windows.Media.Imaging.BitmapImage(new Uri("pack://application:,,,/Assets/guidemate.ico"));
         Title = "随引"; Width = Math.Clamp(_settings.Width, 860, 1800); Height = Math.Clamp(_settings.Height, 500, 1200);
         Left = _settings.Left; Top = _settings.Top; MinWidth = 860; MinHeight = 500;
         WindowStyle = WindowStyle.None; AllowsTransparency = true; Background = Brushes.Transparent;
@@ -115,7 +116,7 @@ public sealed partial class MainWindow : Window
             CancelEdgeSeek(); StopXRayTracking();
             _closing = true; UpdateImmersiveControls(); _onlineVisionTimer.Stop(); InvalidateOnlineSample(); _saveTimer.Stop(); _fadeTimer.Stop(); UpdateHistory(); SaveSettings();
             _chromeServer?.Dispose();
-            _keys?.Dispose(); _tray?.Dispose(); _overlay?.Close(); _danmakuOverlay?.Close(); _browser.Dispose();
+            _keys?.Dispose(); _tray?.Icon?.Dispose(); _tray?.Dispose(); _overlay?.Close(); _danmakuOverlay?.Close(); _browser.Dispose();
         };
     }
 
@@ -698,7 +699,7 @@ public sealed partial class MainWindow : Window
     }
     private void InitializeTray()
     {
-        _tray = new Forms.NotifyIcon { Text = "随引", Icon = System.Drawing.SystemIcons.Application, Visible = true };
+        _tray = new Forms.NotifyIcon { Text = "随引", Icon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath!), Visible = true };
         var menu = new Forms.ContextMenuStrip();
         menu.Items.Add("恢复窗口", null, (_, _) => Dispatcher.Invoke(EmergencyRestore));
         menu.Items.Add("播放 / 暂停", null, (_, _) => Dispatcher.Invoke(() => Fire(() => CommandAsync("toggle"))));

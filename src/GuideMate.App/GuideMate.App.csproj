@@ -10,8 +10,10 @@
     <AssemblyTitle>随引</AssemblyTitle>
     <Product>随引</Product>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>../../assets/branding/guidemate.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
+    <Resource Include="../../assets/branding/guidemate.ico" Link="Assets/guidemate.ico" />
     <ProjectReference Include="../GuideMate.Core/GuideMate.Core.csproj" />
     <ProjectReference Include="../GuideMate.Vision/GuideMate.Vision.csproj" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
