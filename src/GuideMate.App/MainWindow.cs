@@ -209,7 +209,7 @@ public sealed partial class MainWindow : Window
         System.Windows.Automation.AutomationProperties.SetName(_dragHandle, "拖动小窗");
         _dragHandle.HorizontalAlignment = HorizontalAlignment.Left; _dragHandle.VerticalAlignment = VerticalAlignment.Top;
         _dragHandle.Margin = new(8); _dragHandle.Visibility = Visibility.Collapsed; _dragHandle.Opacity = 0.7;
-        _dragHandle.DragDelta += (_, e) => QueueImmersiveDrag(e);
+        _dragHandle.DragStarted += (_, e) => BeginImmersiveDrag(e);
         _dragHandle.DragCompleted += (_, e) => { FinishImmersiveDrag(e.Canceled); SampleImmersiveCursor(); };
         _workspace.Children.Add(_dragHandle);
         BuildSmallWindowControls(); BuildImmersiveFeedback();

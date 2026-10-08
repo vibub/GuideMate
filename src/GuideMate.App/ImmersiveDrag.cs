@@ -1,57 +1,62 @@
 using System.Runtime.InteropServices;
 using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
-using System.Windows.Threading;
 
 namespace GuideMate.App;
 
 public sealed partial class MainWindow
 {
-    private bool _dragMovePending;
+    private ImmersiveDragPump? _dragMovePump;
     private nint _dragWindow;
-    private int _dragLeft, _dragTop;
-    // Input owns window movement; full-screen layered rendering must not gate its deadline.
-    private readonly DispatcherTimer _dragMoveTimer = new(DispatcherPriority.Input)
-        { Interval = TimeSpan.FromMilliseconds(16) };
+    private int _dragOffsetX, _dragOffsetY, _dragButton;
 
-    private void QueueImmersiveDrag(DragDeltaEventArgs e)
+    private void BeginImmersiveDrag(DragStartedEventArgs e)
     {
+        FinishImmersiveDrag(true);
         if (!_immersive || !IsVisible || WindowState != WindowState.Normal) return;
-        var handle = new WindowInteropHelper(this).Handle;
-        if (!ReadDragWindowRect(handle, out var rect)) return;
-        var dpi = VisualTreeHelper.GetDpi(this);
-        // Thumb reports displacement from its grip point, not additive mouse steps.
-        // Replace the pending destination so a burst cannot accumulate stale deltas.
-        _dragWindow = handle;
-        _dragLeft = rect.Left + (int)Math.Round(e.HorizontalChange * dpi.DpiScaleX);
-        _dragTop = rect.Top + (int)Math.Round(e.VerticalChange * dpi.DpiScaleY);
-        if (!_dragMovePending)
-        {
-            _dragMovePending = true;
-            _dragMoveTimer.Tick += OnImmersiveDragTick;
-            _dragMoveTimer.Start();
-        }
-        e.Handled = true;
+        _dragWindow = new WindowInteropHelper(this).Handle;
+        if (!ReadDragWindowRect(_dragWindow, out var rect)) return;
+        // Keep the grabbed point in physical screen pixels across negative origins and DPI changes.
+        var grip = _dragHandle.PointToScreen(new(e.HorizontalOffset, e.VerticalOffset));
+        _dragOffsetX = (int)Math.Round(grip.X) - rect.Left;
+        _dragOffsetY = (int)Math.Round(grip.Y) - rect.Top;
+        _dragButton = ReadDragSystemMetric(23) == 0 ? 0x01 : 0x02; // SM_SWAPBUTTON
+        _dragMovePump = new(Dispatcher, OnImmersiveDragTick);
+        UpdateXRayPointer(null);
     }
 
-    private void OnImmersiveDragTick(object? sender, EventArgs e) => FinishImmersiveDrag(false);
+    private void OnImmersiveDragTick()
+    {
+        if (_closing || !_immersive || !IsVisible || WindowState != WindowState.Normal || !_dragHandle.IsDragging)
+        { FinishImmersiveDrag(true); return; }
+        // A delayed WPF button-up must not keep moving the window after physical release.
+        if (ReadDragButtonState(_dragButton) >= 0) { FinishImmersiveDrag(false); return; }
+        ApplyImmersiveDragPosition();
+    }
+
+    private void ApplyImmersiveDragPosition()
+    {
+        if (!ReadXRayCursor(out var cursor) || !ReadDragWindowRect(_dragWindow, out var rect)) return;
+        var left = cursor.X - _dragOffsetX;
+        var top = cursor.Y - _dragOffsetY;
+        if (rect.Left == left && rect.Top == top) return;
+        // One move updates both axes without resizing, activation, z-order changes or SC_MOVE.
+        MoveDragWindow(_dragWindow, 0, left, top, 0, 0, 0x0015);
+    }
 
     private void FinishImmersiveDrag(bool canceled)
     {
-        if (!_dragMovePending) return;
-        _dragMoveTimer.Stop();
-        _dragMoveTimer.Tick -= OnImmersiveDragTick;
-        _dragMovePending = false;
-        if (canceled || _closing || !_immersive || !IsVisible || WindowState != WindowState.Normal) return;
-        if (!ReadDragWindowRect(_dragWindow, out var rect) || rect.Left == _dragLeft && rect.Top == _dragTop) return;
-        // One move updates both axes without resizing, activation, z-order changes or SC_MOVE.
-        MoveDragWindow(_dragWindow, 0, _dragLeft, _dragTop, 0, 0, 0x0015);
+        if (_dragMovePump is not { } pump) return;
+        _dragMovePump = null;
+        pump.Dispose();
+        if (!canceled && !_closing && _immersive && IsVisible && WindowState == WindowState.Normal)
+            ApplyImmersiveDragPosition();
     }
 
     private void CancelImmersiveDrag()
     {
-        _dragHandle.CancelDrag();
         FinishImmersiveDrag(true);
+        _dragHandle.CancelDrag();
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -62,4 +67,8 @@ public sealed partial class MainWindow
     [DllImport("user32.dll", EntryPoint = "SetWindowPos")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool MoveDragWindow(nint window, nint insertAfter, int left, int top, int width, int height, uint flags);
+    [DllImport("user32.dll", EntryPoint = "GetAsyncKeyState")]
+    private static extern short ReadDragButtonState(int key);
+    [DllImport("user32.dll", EntryPoint = "GetSystemMetrics")]
+    private static extern int ReadDragSystemMetric(int index);
 }

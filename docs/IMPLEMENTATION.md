@@ -114,9 +114,9 @@ MediaResponse 支持完整文件 200、单段字节范围 206、无效范围 416
 
 主窗口置顶由 WindowTopmostMode 三档控制：Never（不置顶）、Immersive（沉浸置顶）、Always（始终置顶）。启动、选项变化和进入/退出沉浸时重新计算 Window.Topmost；最大化不等于沉浸，紧急恢复退出沉浸后按原模式解除或保留置顶，不改写用户选择。侧栏使用三项下拉框，选择立即保存。
 
-沉浸小窗拖动使用 WPF Thumb：它管理按下、鼠标捕获、位移和释放，DragDelta 仅在沉浸且正常显示状态下计算物理像素目标。原 DragMove 会发送 WM_SYSCOMMAND/SC_MOVE 并进入 Windows 拖窗循环，贴边时触发 Snap 预览；直接移动窗口避免该入口。Thumb 保持原拖动图标、提示、34×32 尺寸与悬停/拖动状态样式；手动缩放与普通标题栏 DragMove 保留。不改系统设置，不移除全局分屏能力，不拦截 Win+方向键；混合 DPI 跨显示器仍需实测。
+沉浸小窗拖动由 WPF Thumb 管理按下、鼠标捕获与结束；DragStarted 将抓取点转为物理屏幕坐标，并保存它相对原生窗口左上角的偏移。拖动期间从 GetCursorPos 读取最新物理鼠标位置，直接减去固定抓取偏移得到目标，不依赖排队的 DragDelta 局部位移，也不累加尚未应用的输入。负坐标与显示缩放沿用屏幕物理坐标；混合 DPI 跨显示器仍需实测。原 DragMove 会发送 WM_SYSCOMMAND/SC_MOVE 并进入 Windows 拖窗循环，贴边时触发 Snap 预览；直接移动窗口避免该入口。Thumb 保持原拖动图标、提示、34×32 尺寸与悬停/拖动状态样式；手动缩放与普通标题栏 DragMove 保留。
 
-拖动更新在 DispatcherPriority.Input 的 16 ms 计时节拍合并为每轮最多一次 SetWindowPos，不依赖 CompositionTarget.Rendering 的合成帧回调，以 SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE 同时更新横纵坐标，避免逐个设置 Left/Top 产生两次窗口移动及浏览器位置通知。Thumb 位移是当前局部坐标相对最初抓取点的差，必须以当前原生边界计算并替换待应用目标，不能把多个尚未应用的位移累加。WPF 通过原生位置消息更新 Left/Top。鼠标松开会立即应用最后待处理位置；取消捕获、切换模式、最小化、隐藏及关闭会停止输入计时并丢弃待移动目标，不让后续回调把恢复后的窗口移走。
+拖动使用仅在捕获期间存活的独立 16 ms System.Threading.Timer 触发，以 DispatcherPriority.Send 向 UI 线程提交最多一个回调。计时触发不等待 WPF DispatcherTimer 的消息队列晋级；位移采样与一次 SetWindowPos 在 UI 线程执行，先于排队的 Render/Normal/Input 工作，同步更新两轴并保留 SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE 与浏览器位置通知。慢回调期间合并计时触发，不堆积历史鼠标坐标，不改变视频采集帧率；它不能抢占已经执行中的长 UI 操作。原生主鼠标键状态考虑左右键交换，避免排队的 WPF 松开事件让窗口继续跟随。松开会读取并应用最后位置；取消捕获、切换模式、最小化、隐藏及关闭会停止计时并作废已提交回调，后续旧回调不能移动恢复后的窗口。
 
 新配置通过可空 TopmostMode 持久化。旧配置未含该字段时，读取原 Topmost 布尔值：true 对应 Always，false 对应 Never；新模式优先于旧值，选择后同步旧布尔字段以兼容既有配置。无效枚举值在设置读取边界回退到旧值。默认保持已有的始终置顶行为，不能借功能升级重置用户设置或浏览器资料。字幕浮窗不跟随主窗三档变化，仍是独立置顶窗口。
 
