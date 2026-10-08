@@ -37,8 +37,10 @@ public sealed partial class MainWindow
             calibration.Show();
             await Wait(() => calibration.PreviewReady && calibration.PreviewAngle is > 260 and < 280,
                 "Endfield calibration previews actual marker with its enlarged-map preset");
+            calibration.VerifySelectionInteraction(checks, Path.Combine(_dataPath, "selection-local-large.png"));
             calibration.VerifyLayoutAndCapture(Path.Combine(_dataPath, "endfield-calibration-large.png"));
             calibration.Width = 680; calibration.Height = 520; await Task.Delay(200);
+            calibration.VerifySelectionInteraction(checks, Path.Combine(_dataPath, "selection-local-minimum.png"));
             calibration.VerifyLayoutAndCapture(Path.Combine(_dataPath, "endfield-calibration-minimum.png"));
             checks.Add("Endfield calibration game selector and controls fit both window sizes");
             calibration.SelectGame(VisionGame.Genshin);
@@ -71,6 +73,9 @@ public sealed partial class MainWindow
             onlineCalibration.Show();
             await Wait(() => onlineCalibration.PreviewReady && onlineCalibration.PreviewAngle is > 250 and < 290,
                 "Endfield online calibration detects a browser-captured actual guide frame");
+            onlineCalibration.VerifySelectionInteraction(checks, Path.Combine(_dataPath, "selection-online-large.png"));
+            onlineCalibration.Width = 680; onlineCalibration.Height = 520; await Task.Delay(200);
+            onlineCalibration.VerifySelectionInteraction(checks, Path.Combine(_dataPath, "selection-online-minimum.png"));
             onlineCalibration.VerifyLayoutAndCapture(Path.Combine(_dataPath, "endfield-online-calibration.png"));
         }
         finally { onlineCalibration.Close(); }

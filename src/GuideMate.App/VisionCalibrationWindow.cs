@@ -7,7 +7,7 @@ using Cv = OpenCvSharp;
 
 namespace GuideMate.App;
 
-internal sealed class VisionCalibrationWindow : Window
+internal sealed partial class VisionCalibrationWindow : Window
 {
     private readonly string _ffmpeg, _path;
     private readonly double _startTime;
@@ -31,7 +31,6 @@ internal sealed class VisionCalibrationWindow : Window
     private CancellationTokenSource? _analysis;
     private VideoInfo? _info;
     private Cv.Mat? _frame;
-    private Point? _dragOrigin;
     private ArrowRegion _region = new(0, 0, 1, 1);
     private bool _busy, _closed, _loading;
     private readonly OnlineVideoFrame? _onlineFrame;
@@ -54,9 +53,10 @@ internal sealed class VisionCalibrationWindow : Window
         root.RowDefinitions.Add(new());
         for (var i = 0; i < 4; i++) root.RowDefinitions.Add(new() { Height = GridLength.Auto });
         root.Children.Add(Ui.Text(System.IO.Path.GetFileName(path), 16));
-        _picture.Children.Add(_preview); _picture.Children.Add(_selection); _selection.Children.Add(_regionOutline);
+        _picture.Children.Add(_preview); _picture.Children.Add(_selection); _selection.Children.Add(_regionOutline); InitializeSelection();
         var viewbox = new Viewbox { Child = _picture, Stretch = Stretch.Uniform, Margin = new(0, 10, 0, 10) };
         Grid.SetRow(viewbox, 1); root.Children.Add(viewbox);
+        viewbox.SizeChanged += (_, _) => { EndSelectionDrag(true); DrawRegion(); };
         var seek = new Grid(); seek.ColumnDefinitions.Add(new()); seek.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); seek.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         _clock.Margin = new(12, 0, 8, 0); Grid.SetColumn(_clock, 1); seek.Children.Add(_clock); seek.Children.Add(_time);
         _refresh = Ui.Icon("\uE72C", "读取所选时间的画面", () => _ = RefreshAsync());
@@ -74,7 +74,8 @@ internal sealed class VisionCalibrationWindow : Window
         controls.Children.Add(_northAngle); _northAngle.ToolTip = "从画面正上方向顺时针量出的北向角度；旋转小地图需取消北向固定";
         _coordinates.Margin = new(12, 0, 0, 0); controls.Children.Add(_coordinates);
         Grid.SetRow(controls, 3); root.Children.Add(controls);
-        _preset.SelectionChanged += (_, _) => ApplyPreset();
+        _preset.SelectionChanged += (_, _) =>
+        { if (_preset.SelectedItem as string != "手动选区") { EndSelectionDrag(true); ApplyPreset(); } };
         _game.SelectionChanged += (_, _) =>
         {
             var manual = _preset.SelectedItem as string == "手动选区";
@@ -88,23 +89,6 @@ internal sealed class VisionCalibrationWindow : Window
         _game.SelectedIndex = (int)(onlineProfile?.Game ?? game);
         _northLocked.Checked += (_, _) => DetectPreview(); _northLocked.Unchecked += (_, _) => DetectPreview();
         _northAngle.LostFocus += (_, _) => DetectPreview();
-        _selection.ToolTip = "拖动框选玩家箭头";
-        _selection.MouseLeftButtonDown += (_, e) =>
-        {
-            if (_busy || _loading || _info == null) return;
-            _dragOrigin = e.GetPosition(_selection); _selection.CaptureMouse(); e.Handled = true;
-        };
-        _selection.MouseMove += (_, e) =>
-        {
-            if (_dragOrigin is not { } origin || _info == null) return;
-            var point = e.GetPosition(_selection);
-            point.X = Math.Clamp(point.X, 0, _info.Width); point.Y = Math.Clamp(point.Y, 0, _info.Height);
-            var size = Math.Min(Math.Abs(point.X - origin.X), Math.Abs(point.Y - origin.Y));
-            var x = Math.Min(origin.X, point.X); var y = Math.Min(origin.Y, point.Y);
-            if (size >= 8) { _region = new(x / _info.Width, y / _info.Height, size / _info.Width, size / _info.Height); _preset.SelectedItem = "手动选区"; DrawRegion(); }
-        };
-        _selection.MouseLeftButtonUp += (_, _) => { _dragOrigin = null; _selection.ReleaseMouseCapture(); DetectPreview(); };
-        _selection.LostMouseCapture += (_, _) => _dragOrigin = null;
         _result.Margin = new(0, 8, 0, 8); Grid.SetRow(_result, 4); root.Children.Add(_result);
         var footer = new Grid { Margin = new(0, 4, 0, 0) }; footer.ColumnDefinitions.Add(new()); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         _progress.VerticalAlignment = VerticalAlignment.Center; _progress.Margin = new(0, 0, 16, 0); footer.Children.Add(_progress);
@@ -137,7 +121,8 @@ internal sealed class VisionCalibrationWindow : Window
             catch (OperationCanceledException) { }
             catch (Exception ex) { if (!_closed) _result.Text = "读取失败：" + ex.Message; }
         };
-        Closed += (_, _) => { _closed = true; _lifetime.Cancel(); _analysis?.Cancel(); _frame?.Dispose(); _lifetime.Dispose(); };
+        Deactivated += (_, _) => EndSelectionDrag(true);
+        Closed += (_, _) => { EndSelectionDrag(true); _closed = true; _lifetime.Cancel(); _analysis?.Cancel(); _frame?.Dispose(); _lifetime.Dispose(); };
     }
 
     private void ApplyPreset()
@@ -157,11 +142,13 @@ internal sealed class VisionCalibrationWindow : Window
         Canvas.SetLeft(_regionOutline, rect.X); Canvas.SetTop(_regionOutline, rect.Y);
         _regionOutline.Width = rect.Width; _regionOutline.Height = rect.Height;
         _coordinates.Text = $"{rect.X}, {rect.Y} · {rect.Width}×{rect.Height}";
+        DrawSelectionHandles(rect);
     }
 
     private async Task RefreshAsync()
     {
         if (_info == null || _loading || _busy) return;
+        EndSelectionDrag(true);
         _loading = true; _refresh.IsEnabled = false; _analyze.IsEnabled = false;
         try
         {
@@ -187,6 +174,8 @@ internal sealed class VisionCalibrationWindow : Window
     {
         if (_frame == null || _info == null || _busy || _closed) return;
         if (!double.TryParse(_northAngle.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var north) || !double.IsFinite(north)) { _result.Text = "北向角度无效"; return; }
+        if (Math.Min(_region.Width * _frame.Width, _region.Height * _frame.Height) < 8)
+        { PreviewAngle = null; _result.Text = "预览中的选区过小，请扩大选区"; return; }
         using var crop = new Cv.Mat(_frame, VideoAnalysis.PixelRegion(_region, new VideoInfo(_frame.Width, _frame.Height, 1)));
         using var scaled = new Cv.Mat(); Cv.Cv2.Resize(crop, scaled, new(160, 160));
         var detected = ArrowDetector.Detect(scaled, lowResolution: _onlineFrame != null && _onlineFrame.DetailPixels * _region.Width < 60, game: Game);
