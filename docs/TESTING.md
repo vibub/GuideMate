@@ -35,12 +35,12 @@ $testProfile = Join-Path $env:TEMP ('GuideMate-check-' + [guid]::NewGuid().ToStr
 ./scripts/Package-GuideMate.ps1 -Version v0.0.0-local
 ```
 
-打包使用新的暂存目录，生成 ZIP 与 SHA256 后清理本次暂存目录。WPF 和 Chrome 桥接均依赖系统 .NET 10、单文件发布，包内只合并应用及第三方依赖，不包含 .NET 运行库，发布目录不再散放 DLL，也不附带 SDK XML 文档。保留中英文资源；框架依赖发布不做程序集裁剪，Chrome 桥接继续使用类型明确的 JSON 元数据。单文件不启用压缩，避免增加启动解压开销；必要的原生库首次运行解包到 `%TEMP%\.net`，后续启动复用缓存。OpenCV 使用同版本官方 Windows Slim 包，保留实际使用的图像处理模块；离线分析继续调用用户已有的 FFmpeg/ffprobe。
+打包使用新的暂存目录，生成 ZIP 与 SHA256 后清理本次暂存目录。WPF 和 Chrome 桥接均依赖系统 .NET 10，采用普通多文件发布，应用及第三方 DLL 与 EXE 分开存放，不包含 .NET 运行库，也不附带 SDK XML 文档。保留中英文资源；框架依赖发布不做程序集裁剪，Chrome 桥接继续使用类型明确的 JSON 元数据。托管与原生库从发布目录加载，不再进行单文件合并、压缩或启动解包。OpenCV 使用同版本官方 Windows Slim 包，保留实际使用的图像处理模块；离线分析继续调用用户已有的 FFmpeg/ffprobe。
 
 更新只替换程序文件，保留 settings.json、WebView2、视觉缓存和正式资料目录。升级旧的多文件版本时，将发布包完整解压到新的程序目录，避免覆盖后残留旧 DLL；程序继续沿用正式资料目录。源码发布也应指定全新输出目录。测量包体积以全新暂存目录生成的 ZIP 为准，不得通过清空整个旧目录来更新软件。
 
-无需打开窗口的验证包括控制台回归、发布包文件清单、单文件内嵌的 runtimeconfig 与 Windows GUI apphost 检查。桌面允许测试时，再在隔离环境验证没有 .NET、只有普通 .NET Runtime、装好 Desktop Runtime 三种启动状态，及全屏弹幕下的真实拖动。
+无需打开窗口的验证包括发布包文件清单、独立 runtimeconfig 的共享框架声明、DLL 依赖完整性与 Windows GUI apphost 检查。确认包内没有 coreclr、hostfxr、System.Private.CoreLib 或 WPF/.NET 系统运行库。桌面允许测试时，再在隔离环境验证没有 .NET、只有普通 .NET Runtime、装好 Desktop Runtime 三种启动状态，及全屏弹幕下的真实拖动。
 
-单文件发布后，用隔离目录检查 WebView2 本地视频加载、OpenCV 校准预览、Chrome 合成协议及全屏弹幕子进程启动/退出。资源路径使用 `AppContext.BaseDirectory`，同程序子进程使用 `Environment.ProcessPath`，不能依赖单文件中的 `Assembly.Location`。
+多文件发布后，用隔离目录检查 WebView2 本地视频加载、OpenCV 校准预览、Chrome 合成协议及全屏弹幕子进程启动/退出。资源路径使用 `AppContext.BaseDirectory`，同程序子进程使用 `Environment.ProcessPath`，完整复制发布目录，不单独复制 EXE。
 
 旧 `--smoke-test` 参数继续作为隔离模式兼容入口，避免旧测试命令访问正式资料；它不再自动执行检查或退出。

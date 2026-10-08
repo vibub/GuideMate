@@ -8,7 +8,7 @@ Windows 攻略视频跟随工具：置顶小窗、全局热键、鼠标穿透、
 
 支持 Windows 10 1809 及以上、Windows 11（x64），运行需要 [.NET 10 Desktop Runtime（Windows x64）](https://dotnet.microsoft.com/download/dotnet/10.0) 和 [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
 
-**使用发布包**：从 GitHub 仓库的 Releases 下载 `GuideMate-版本-win-x64.zip`，完整解压后双击 `Start-GuideMate.cmd` 或 `GuideMate.exe`。不要只取出单个 EXE。主程序和 Chrome 桥接均为单文件，发布包不附带 .NET 运行时，也不需要安装 SDK。每次启动会先检查所需的运行时，缺少时由 Windows 原生启动入口显示安装提示并提供官方下载链接；请安装 **.NET 10 Desktop Runtime 的 Windows x64 版**，普通 .NET Runtime、x86 版或其他大版本不足以运行 WPF 主程序。安装完成后重新打开随引；程序不会自动下载或安装运行时。视频素材、浏览器扩展及说明仍随包提供。
+**使用发布包**：从 GitHub 仓库的 Releases 下载 `GuideMate-版本-win-x64.zip`，完整解压后双击 `Start-GuideMate.cmd` 或 `GuideMate.exe`。不要只取出单个 EXE。主程序和 Chrome 桥接均为普通多文件发布，DLL 与 EXE 分开存放；发布包只提供应用依赖，不附带 .NET 运行时，也不需要安装 SDK。每次启动会先检查所需的运行时，缺少时由 Windows 原生启动入口显示安装提示并提供官方下载链接；请安装 **.NET 10 Desktop Runtime 的 Windows x64 版**，普通 .NET Runtime、x86 版或其他大版本不足以运行 WPF 主程序。安装完成后重新打开随引；程序不会自动下载或安装运行时。视频素材、浏览器扩展及说明仍随包提供。
 
 **从源码运行**：安装 [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)，在 Windows 上克隆源码后双击根目录的 `Start-GuideMate.cmd`。有本地发布目录时直接启动；否则编译 Release。命令行可用 `./scripts/Start-GuideMate.ps1 -Build` 强制从源码构建。
 

@@ -51,7 +51,7 @@
 
 客户端采用 C#、.NET 10 LTS、WPF。使用 Microsoft.Web.WebView2 的 WebView2CompositionControl，在 WPF 层处理工具栏、遮罩和透明裁剪，避免普通 HWND 嵌入控件挡住 WPF 元素的 airspace 问题。该控件自 WebView2 SDK 1.0.2957.106 起进入稳定发行版。
 
-使用 Evergreen WebView2 Runtime。此次实际开发环境是用户已安装的 .NET SDK 10.0.401、.NET Runtime 10.0.12、WebView2 Runtime 154.0.4258.53。NuGet 固定 Microsoft.Web.WebView2 1.0.4258.31。WPF 目标框架为 net10.0-windows10.0.17763.0，显式包含 Windows SDK 契约，否则 composition 控件可能在启动时缺少 Microsoft.Windows.SDK.NET。发布采用 win-x64 框架依赖单文件，包内不包含 .NET；运行需要系统已安装 .NET 10 Desktop Runtime x64 和 WebView2 Runtime，无需 SDK。原生 GUI apphost 在执行托管代码前解析运行时，缺失时显示安装提示与官方下载链接，不自动安装，也不访问用户资料。
+使用 Evergreen WebView2 Runtime。此次实际开发环境是用户已安装的 .NET SDK 10.0.401、.NET Runtime 10.0.12、WebView2 Runtime 154.0.4258.53。NuGet 固定 Microsoft.Web.WebView2 1.0.4258.31。WPF 目标框架为 net10.0-windows10.0.17763.0，显式包含 Windows SDK 契约，否则 composition 控件可能在启动时缺少 Microsoft.Windows.SDK.NET。发布采用 win-x64 框架依赖多文件，包内不包含 .NET；运行需要系统已安装 .NET 10 Desktop Runtime x64 和 WebView2 Runtime，无需 SDK。原生 GUI apphost 在执行托管代码前解析运行时，缺失时显示安装提示与官方下载链接，不自动安装，也不访问用户资料。
 
 不采用普通网页作为最终产品：浏览器页面不能独立完成 Windows 全局热键和跨程序鼠标穿透。也不在本版引入服务端或付费模型 API。
 
@@ -216,7 +216,7 @@ VideoAnalysis 使用已安装 FFmpeg/ffprobe，以 ArgumentList 传参，不经�
 
 开发环境：.NET 10 SDK、WebView2 Runtime；NuGet 固定 WebView2、OpenCvSharp4 和 runtime.win.slim 4.13.0.20260627。OpenCV native DLL 随发布包提供；本地分析使用已有 FFmpeg/ffprobe，没有新增系统 SDK。升级后重新验证透明视频绘制与真实图像。脚本优先使用项目 .tools/dotnet/dotnet.exe，找不到时检查系统 SDK。
 
-发布命令生成 artifacts/GuideMate-win-x64 框架依赖单文件目录，不携带 .NET 运行库。提供 Start-GuideMate.ps1 和双击入口，不把源码包描述为已安装应用。
+发布命令生成 artifacts/GuideMate-win-x64 框架依赖多文件目录，不携带 .NET 运行库。提供 Start-GuideMate.ps1 和双击入口，不把源码包描述为已安装应用。
 
 核心自动检查必须覆盖字幕解析、时间偏移、重叠/边界、JSON 字幕、方位复合词、否定、视角与战斗事件。浏览器桥脚本做语法检查；真实客户端用样例媒体验证播放暂停、跳转、倍速、字幕同步、挖孔和透明度。至少一次使用 Windows UI 截图查看整体布局与浮窗，并检查窗口尺寸变化。
 
@@ -257,4 +257,4 @@ VideoAnalysis 使用已安装 FFmpeg/ffprobe，以 ArgumentList 传参，不经�
 
 适配依据为 2026-10-08 读取的 B 站公开播放器 nano 4.10.4（构建时间 2026-09-20）：core.js 暴露 getDanmakuX，npd.491.8e830665.js 管理 visualArray / textData / isHide / showed，npd.505.2d76eed1.js 配置弹幕筛选并将实例挂到播放器。以上内部结构可能随网站更新而改变，真实站点验收需独立于合成模型检查。
 
-全屏弹幕仍在独立进程的 STA 线程接收快照和生成字形：WPF 只在接受新评论时将描边文字光栅化一次，Direct2D 将文字尺寸的位图上传到 DirectComposition 表面。DWM 持有每条评论的图层，执行位移及到期隐藏动画；不订阅 CompositionTarget.Rendering，也不每帧重建整屏透明绘制指令。高 DPI 长文本按 2048 像素分块，保留完整内容并避开单纹理尺寸限制。普通快照沿用系统动画，暂停、倍速或超过 0.1 秒的时钟偏差才重定位；超过 1.25 秒的跳转清理旧图层。待处理状态合并为最新快照，同屏拖动不重复传输未变化的状态。跨显示器或运行时缩放变化时，按物理边界与最新 DPI 重建图层；隐藏、退出和关闭释放资源。小窗位置更新继续按输入计时提交，不等待弹幕绘制。图形初始化或上传失败会退出弹幕进程，由主窗既有失败反馈报告，不切回整屏 WPF 绘制。发布仍为不自带 .NET 的单文件，新增图形绑定合并到程序内。OpenCV Slim 和外部 FFmpeg 流程保持一致。
+全屏弹幕仍在独立进程的 STA 线程接收快照和生成字形：WPF 只在接受新评论时将描边文字光栅化一次，Direct2D 将文字尺寸的位图上传到 DirectComposition 表面。DWM 持有每条评论的图层，执行位移及到期隐藏动画；不订阅 CompositionTarget.Rendering，也不每帧重建整屏透明绘制指令。高 DPI 长文本按 2048 像素分块，保留完整内容并避开单纹理尺寸限制。普通快照沿用系统动画，暂停、倍速或超过 0.1 秒的时钟偏差才重定位；超过 1.25 秒的跳转清理旧图层。待处理状态合并为最新快照，同屏拖动不重复传输未变化的状态。跨显示器或运行时缩放变化时，按物理边界与最新 DPI 重建图层；隐藏、退出和关闭释放资源。小窗位置更新继续按输入计时提交，不等待弹幕绘制。图形初始化或上传失败会退出弹幕进程，由主窗既有失败反馈报告，不切回整屏 WPF 绘制。发布采用不自带 .NET 的普通多文件布局，应用与图形绑定 DLL 独立存放，原生库从程序目录加载。OpenCV Slim 和外部 FFmpeg 流程保持一致。

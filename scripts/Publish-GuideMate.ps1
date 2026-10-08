@@ -8,18 +8,16 @@ $publishedExe = Join-Path $publishDirectory 'GuideMate.exe'
 if (Get-Process GuideMate -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $publishedExe }) {
     throw 'Please exit GuideMate normally before publishing so it can save settings. User data will not be modified.'
 }
-$singleFileArguments = @(
-    '-p:PublishSingleFile=true'
+$publishArguments = @(
+    '-p:PublishSingleFile=false'
     '-p:UseAppHost=true'
-    '-p:IncludeNativeLibrariesForSelfExtract=true'
-    '-p:EnableCompressionInSingleFile=false'
     '-p:DebugType=None'
     '-p:PublishDocumentationFiles=false'
 )
-& $sdkCommand publish (Join-Path $projectRoot 'src\GuideMate.App\GuideMate.App.csproj') -c Release -r win-x64 --self-contained false @singleFileArguments -o $publishDirectory
+& $sdkCommand publish (Join-Path $projectRoot 'src\GuideMate.App\GuideMate.App.csproj') -c Release -r win-x64 --self-contained false @publishArguments -o $publishDirectory
 if ($LASTEXITCODE -ne 0) { throw 'GuideMate publish failed.' }
 $hostDirectory = Join-Path $publishDirectory 'chrome-host'
-& $sdkCommand publish (Join-Path $projectRoot 'src\GuideMate.ChromeHost\GuideMate.ChromeHost.csproj') -c Release -r win-x64 --self-contained false -p:PublishTrimmed=false @singleFileArguments -o $hostDirectory
+& $sdkCommand publish (Join-Path $projectRoot 'src\GuideMate.ChromeHost\GuideMate.ChromeHost.csproj') -c Release -r win-x64 --self-contained false -p:PublishTrimmed=false @publishArguments -o $hostDirectory
 if ($LASTEXITCODE -ne 0) { throw 'GuideMate Chrome host publish failed.' }
 Copy-Item -LiteralPath (Join-Path $projectRoot 'chrome-extension') -Destination $publishDirectory -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $projectRoot 'licenses') -Destination $publishDirectory -Recurse -Force
