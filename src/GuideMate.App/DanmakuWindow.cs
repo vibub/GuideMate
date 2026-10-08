@@ -1,72 +1,128 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text.Json;
-using System.Windows.Interop;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 
 namespace GuideMate.App;
 
-// A separate layered window keeps the video, X-ray mask and desktop input independent.
-internal sealed class DanmakuWindow : Window
+// No WPF HwndTarget or full-screen CPU bitmap; only DirectComposition visuals belong to this HWND.
+internal sealed class DanmakuWindow
 {
-    private readonly DanmakuSurface _surface = new();
-    public int CommentCount => _surface.CommentCount;
-    public double MediaTime => _surface.MediaTime;
+    private nint _handle;
+    private System.Drawing.Rectangle _bounds;
+    private DanmakuComposition? _composition;
+    private DanmakuSurface? _surface;
+    public Dispatcher Dispatcher { get; } = Dispatcher.CurrentDispatcher;
+    public bool IsVisible { get; private set; }
+    public int CommentCount => _surface?.CommentCount ?? 0;
+    public double MediaTime => _surface?.MediaTime ?? 0;
 
-    public DanmakuWindow()
+    public void Show()
     {
-        Title = "随引全屏弹幕";
-        WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize;
-        AllowsTransparency = true; Background = Brushes.Transparent;
-        ShowInTaskbar = false; ShowActivated = false; Focusable = false; Topmost = true;
-        Content = _surface;
-        SourceInitialized += (_, _) =>
+        if (_handle == 0)
         {
-            NativeHotkeys.ClickThrough(this, true);
-            HwndSource.FromHwnd(new WindowInteropHelper(this).Handle)?.AddHook((nint hwnd, int message, nint wParam, nint lParam, ref bool handled) =>
-            {
-                if (message == 0x0084) { handled = true; return -1; } // HTTRANSPARENT
-                if (message == 0x0021) { handled = true; return 3; } // MA_NOACTIVATE
-                return 0;
-            });
-        };
-        IsVisibleChanged += (_, _) => _surface.SetVisible(IsVisible);
-        Closed += (_, _) => _surface.SetVisible(false);
+            _composition = new DanmakuComposition();
+            _surface = new DanmakuSurface(_composition);
+            _handle = CreateWindowEx(0x082800a8, WindowClass, "随引全屏弹幕",
+                0x80000000, 0, 0, 1, 1, 0, 0, GetModuleHandle(null), 0);
+            if (_handle == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
+            // Uniform layered alpha enables WS_EX_TRANSPARENT hit testing across processes.
+            // NOREDIRECTIONBITMAP keeps the content on GPU; never call UpdateLayeredWindow.
+            if (!SetLayeredWindowAttributes(_handle, 0, 255, 2))
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            _composition.Attach(_handle);
+        }
+        ShowWindow(_handle, 4); // SW_SHOWNOACTIVATE
+        IsVisible = true;
+    }
+
+    public void Hide()
+    {
+        if (_handle != 0) ShowWindow(_handle, 0);
+        IsVisible = false;
+        Clear();
+    }
+
+    public void Close()
+    {
+        IsVisible = false;
+        _surface?.Clear();
+        _composition?.Dispose();
+        _surface = null; _composition = null;
+        if (_handle != 0) { DestroyWindow(_handle); _handle = 0; }
     }
 
     public void FitToMonitor(System.Drawing.Rectangle screen)
     {
-        var handle = new WindowInteropHelper(this).Handle;
-        if (handle == 0) return;
-        if (GetWindowRect(handle, out var rect) && rect.Left == screen.Left && rect.Top == screen.Top
-            && rect.Right == screen.Right && rect.Bottom == screen.Bottom) return;
-        // Native pixel coordinates are essential for monitors with different DPI and negative origins.
-        SetWindowPos(handle, -1, screen.Left, screen.Top, screen.Width, screen.Height, 0x0210);
-        UpdateLayout();
-        _surface.Clear();
+        if (_handle == 0 || _bounds == screen) return;
+        if (!SetWindowPos(_handle, -1, screen.Left, screen.Top, screen.Width, screen.Height, 0x0210))
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        _bounds = screen;
+        var dpi = GetDpiForWindow(_handle) / 96d;
+        _surface!.Resize(screen.Width / dpi, screen.Height / dpi, dpi);
     }
 
-    public void Update(JsonElement items, double time, bool paused, double rate) => _surface.Update(items, time, paused, rate);
-    public void Configure(double area, double opacity, double fontScale, double speed) => _surface.Configure(area, opacity, fontScale, speed);
-    public void Clear() => _surface.Clear();
-    internal FrameworkElement Surface => _surface;
+    public void Update(JsonElement items, double time, bool paused, double rate) => _surface?.Update(items, time, paused, rate);
+    public void Configure(double area, double opacity, double fontScale, double speed) => _surface?.Configure(area, opacity, fontScale, speed);
+    public void Clear() => _surface?.Clear();
 
-    [StructLayout(LayoutKind.Sequential)]
-    private struct WindowRect { public int Left, Top, Right, Bottom; }
-    [DllImport("user32.dll")] private static extern bool GetWindowRect(nint handle, out WindowRect rect);
-    [DllImport("user32.dll")] private static extern bool SetWindowPos(nint handle, nint after, int x, int y, int width, int height, uint flags);
-
-    private sealed class DanmakuSurface : FrameworkElement
+    private delegate nint WindowProcedure(nint hwnd, uint message, nint wParam, nint lParam);
+    private static readonly WindowProcedure Procedure = HandleMessage;
+    private static readonly string WindowClass = RegisterWindowClass();
+    private static string RegisterWindowClass()
     {
-        private sealed record Comment(BitmapSource Image, Rect InkBounds, double Width, double Start, double Duration, int Row, int Mode);
+        var name = "GuideMate.DanmakuComposition";
+        var definition = new NativeWindowClass { Size = (uint)Marshal.SizeOf<NativeWindowClass>(),
+            Procedure = Marshal.GetFunctionPointerForDelegate(Procedure),
+            Instance = GetModuleHandle(null), ClassName = name };
+        if (RegisterClassEx(ref definition) == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
+        return name;
+    }
+    private static nint HandleMessage(nint hwnd, uint message, nint wParam, nint lParam)
+    {
+        if (message == 0x0084) return -1; // HTTRANSPARENT
+        if (message == 0x0021) return 3; // MA_NOACTIVATE
+        if (message == 0x0014) return 1; // WM_ERASEBKGND: no GDI background
+        if (message == 0x000f) { ValidateRect(hwnd, 0); return 0; }
+        if (message == 0x02e0) return 0; // Bounds and scale are set atomically by FitToMonitor.
+        return DefWindowProc(hwnd, message, wParam, lParam);
+    }
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct NativeWindowClass
+    {
+        public uint Size, Style;
+        public nint Procedure;
+        public int ClassExtra, WindowExtra;
+        public nint Instance, Icon, Cursor, Background, MenuName;
+        [MarshalAs(UnmanagedType.LPWStr)] public string ClassName;
+        public nint SmallIcon;
+    }
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern ushort RegisterClassEx(ref NativeWindowClass definition);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern nint CreateWindowEx(uint extended, string className, string title, uint style, int x, int y, int width, int height, nint parent, nint menu, nint instance, nint parameter);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] private static extern nint GetModuleHandle(string? name);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern nint DefWindowProc(nint hwnd, uint message, nint wParam, nint lParam);
+    [DllImport("user32.dll")] private static extern bool ValidateRect(nint hwnd, nint rect);
+    [DllImport("user32.dll")] private static extern bool ShowWindow(nint hwnd, int command);
+    [DllImport("user32.dll")] private static extern bool DestroyWindow(nint hwnd);
+    [DllImport("user32.dll")] private static extern uint GetDpiForWindow(nint hwnd);
+    [DllImport("user32.dll", SetLastError = true)] private static extern bool SetLayeredWindowAttributes(nint hwnd, uint color, byte alpha, uint flags);
+    [DllImport("user32.dll", SetLastError = true)] private static extern bool SetWindowPos(nint handle, nint after, int x, int y, int width, int height, uint flags);
+
+    private sealed class DanmakuSurface
+    {
+        private sealed record Comment(DanmakuComposition.Sprite Sprite, Rect InkBounds, double Width, double Start, double Duration, int Row, int Mode);
         private readonly List<Comment> _comments = [];
         private readonly HashSet<string> _seen = [];
         private readonly Stopwatch _clock = new();
         private readonly Pen _outline = new(Brushes.Black, 1.6);
         private readonly Typeface _typeface = new("Microsoft YaHei");
         private double _time, _rate = 1;
-        private bool _paused = true, _rendering;
+        private bool _paused = true;
+        private readonly DanmakuComposition _composition;
+        private double ActualWidth, ActualHeight, _dpi = 1;
         private int _nextRow;
         private sealed record Appearance(double Area, double Opacity, double FontScale, double Speed);
         private Appearance _appearance = new(1, 1, 1, 1);
@@ -76,56 +132,60 @@ internal sealed class DanmakuWindow : Window
         public int CommentCount => _comments.Count;
         public double MediaTime => _time + (_paused ? 0 : _clock.Elapsed.TotalSeconds * _rate);
 
-        public DanmakuSurface() { IsHitTestVisible = false; ClipToBounds = true; _outline.Freeze(); }
+        public DanmakuSurface(DanmakuComposition composition)
+        {
+            _composition = composition;
+            _outline.Freeze();
+        }
 
         public void Configure(double area, double opacity, double fontScale, double speed)
         {
             var appearance = new Appearance(area, opacity, fontScale, speed);
             if (_appearance == appearance) return;
             _appearance = appearance;
-            Opacity = opacity;
-            // Rebuild active geometry and lane assignments from the next source snapshot.
+            _composition.Configure(ActualWidth, AreaHeight, _dpi, opacity);
             Clear();
         }
 
-        protected override void OnRenderSizeChanged(SizeChangedInfo sizeInfo)
+        public void Dispose()
         {
-            base.OnRenderSizeChanged(sizeInfo);
+            foreach (var comment in _comments) comment.Sprite.Dispose();
+            _comments.Clear(); _seen.Clear();
+        }
+        public void Resize(double width, double height, double dpi)
+        {
             Clear();
-        }
-
-        public void SetVisible(bool visible)
-        {
-            if (_rendering == visible) return;
-            _rendering = visible;
-            if (visible) CompositionTarget.Rendering += RenderFrame;
-            else { CompositionTarget.Rendering -= RenderFrame; Clear(); }
-        }
-
-        private void RenderFrame(object? sender, EventArgs e)
-        {
-            if (_paused || _comments.Count == 0 || _appearance.Opacity == 0) return;
-            RemoveExpired();
-            InvalidateVisual();
+            ActualWidth = width; ActualHeight = height; _dpi = dpi;
+            _composition.Configure(ActualWidth, AreaHeight, _dpi, _appearance.Opacity);
+            _composition.Commit();
         }
 
         public void Clear()
         {
+            foreach (var comment in _comments) _composition.Remove(comment.Sprite);
             _comments.Clear(); _seen.Clear(); _nextRow = 0;
-            InvalidateVisual();
+            _composition.Commit();
         }
 
         private void RemoveExpired()
         {
             var time = MediaTime;
-            _comments.RemoveAll(comment => time - comment.Start >= comment.Duration);
+            for (var i = _comments.Count - 1; i >= 0; i--)
+            {
+                if (time - _comments[i].Start < _comments[i].Duration) continue;
+                _composition.Remove(_comments[i].Sprite);
+                _comments.RemoveAt(i);
+            }
         }
 
         public void Update(JsonElement items, double time, bool paused, double rate)
         {
             if (Math.Abs(time - MediaTime) > 1.25) Clear();
-            _time = time; _paused = paused; _rate = rate; _clock.Restart();
+            // Leave DWM animations running across ordinary snapshots; resync only on clock/state changes.
+            var resync = Math.Abs(time - MediaTime) > 0.1 || paused != _paused || rate != _rate;
+            if (resync) { _time = time; _paused = paused; _rate = rate; _clock.Restart(); }
             RemoveExpired();
+            if (resync) foreach (var comment in _comments) Position(comment);
             var current = new HashSet<string>();
             foreach (var item in items.EnumerateArray().Take(240))
             {
@@ -144,7 +204,7 @@ internal sealed class DanmakuWindow : Window
                 var brush = new SolidColorBrush(System.Windows.Media.Color.FromRgb((byte)(color >> 16), (byte)(color >> 8), (byte)color));
                 brush.Freeze();
                 var formatted = new FormattedText(text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-                    _typeface, size, brush, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+                    _typeface, size, brush, _dpi);
                 var geometry = formatted.BuildGeometry(new Point(0, 0)); geometry.Freeze();
                 if (geometry.Bounds.IsEmpty) continue;
                 var width = Math.Max(1, formatted.WidthIncludingTrailingWhitespace);
@@ -157,9 +217,9 @@ internal sealed class DanmakuWindow : Window
                     var row = mode == 5 ? i : mode == 4 ? rows - i - 1 : (_nextRow + i) % rows;
                     if (_comments.Any(comment => comment.Row == row && (mode is 4 or 5 || comment.Mode is 4 or 5
                         || (mode == 6) != (comment.Mode == 6) || !HasRoom(comment, width, start, mode)))) continue;
-                    // Rasterize the outline once per accepted comment; each frame only blits its sprite.
+                    // Rasterize once, then upload only this glyph-sized sprite to DirectComposition.
                     var bounds = geometry.Bounds; bounds.Inflate(2, 2);
-                    var dpi = VisualTreeHelper.GetDpi(this);
+                    var dpi = new DpiScale(_dpi, _dpi);
                     var visual = new DrawingVisual();
                     using (var drawing = visual.RenderOpen())
                     {
@@ -171,13 +231,15 @@ internal sealed class DanmakuWindow : Window
                         Math.Max(1, (int)Math.Ceiling(bounds.Height * dpi.DpiScaleY)),
                         96 * dpi.DpiScaleX, 96 * dpi.DpiScaleY, PixelFormats.Pbgra32);
                     image.Render(visual); image.Freeze();
-                    _comments.Add(new(image, bounds, width, start, duration, row, mode));
+                    var comment = new Comment(_composition.Add(image, _dpi), bounds, width, start, duration, row, mode);
+                    _comments.Add(comment);
+                    Position(comment);
                     _nextRow = (row + 1) % rows;
                     break;
                 }
             }
             _seen.IntersectWith(current);
-            InvalidateVisual();
+            _composition.Commit();
         }
 
         private static double Number(JsonElement item, string key, double fallback) =>
@@ -192,16 +254,12 @@ internal sealed class DanmakuWindow : Window
             mode == 6 ? X(previous) >= -width + (MediaTime - start) * ScrollSpeed + width + 28
                 : X(previous) + previous.Width + 28 <= ActualWidth - (MediaTime - start) * ScrollSpeed;
 
-        protected override void OnRender(DrawingContext drawing)
+        private void Position(Comment comment)
         {
-            base.OnRender(drawing);
-            drawing.PushClip(new RectangleGeometry(new Rect(0, 0, ActualWidth, AreaHeight)));
-            foreach (var comment in _comments)
-            {
-                drawing.DrawImage(comment.Image, new Rect(X(comment) + comment.InkBounds.X,
-                    12 + comment.Row * RowHeight + comment.InkBounds.Y, comment.InkBounds.Width, comment.InkBounds.Height));
-            }
-            drawing.Pop();
+            var velocity = comment.Mode is 4 or 5 ? 0 : (comment.Mode == 6 ? 1 : -1) * ScrollSpeed * _rate;
+            var remaining = (comment.Duration - (MediaTime - comment.Start)) / Math.Max(_rate, 0.01);
+            _composition.Position(comment.Sprite, X(comment) + comment.InkBounds.X,
+                12 + comment.Row * RowHeight + comment.InkBounds.Y, velocity, Math.Max(0.001, remaining), _paused);
         }
     }
 }

@@ -251,10 +251,10 @@ VideoAnalysis 使用已安装 FFmpeg/ffprobe，以 ArgumentList 传参，不经�
 
 ## B 站全屏弹幕
 
-沉浸时使用独立的 WPF 透明置顶窗口覆盖小窗所在显示器的完整物理边界（包含任务栏区域）。通过 WS_EX_TRANSPARENT / WS_EX_NOACTIVATE、HTTRANSPARENT 和 MA_NOACTIVATE 保持点击穿透及不抢焦点，不改主窗置顶、透明度、X 光、字幕窗及热键策略。按视频时钟插值绘制文字，暂停时冻结，倍速时同步；导航、播放器变化和 seeking 代次清理旧评论。隐藏、最小化、关闭开关和退出沉浸停止绘制并收起覆盖层。设置仅在保存时写入 FullscreenDanmaku，旧资料缺字段默认开启，不改变既有浏览器目录。
+沉浸时使用独立的原生透明置顶窗口覆盖小窗所在显示器的完整物理边界（包含任务栏区域）。窗口设置 WS_EX_NOREDIRECTIONBITMAP，内容直接由 DirectComposition 合成；WS_EX_LAYERED 的统一 alpha 为 255，配合 WS_EX_TRANSPARENT / WS_EX_NOACTIVATE、HTTRANSPARENT 和 MA_NOACTIVATE 保持跨进程点击穿透及不抢焦点。窗口没有 WPF HwndTarget，也不调用 UpdateLayeredWindow。不改主窗置顶、透明度、X 光、字幕窗及热键策略。暂停时冻结，倍速时同步；导航、播放器变化和 seeking 代次清理旧评论。隐藏、最小化、关闭开关和退出沉浸移除弹幕图层并收起覆盖层。设置仅在保存时写入 FullscreenDanmaku，旧资料缺字段默认开启，不改变既有浏览器目录。
 
 桥接读取当前 B 站 nano 播放器的 player.danmaku.getDanmakuX().manager.visualArray。使用已通过播放器筛选、未隐藏且已显示的 textData，保留普通滚动、顶部、底部、反向文字的内容与颜色；不下载弹幕接口、不读取 Cookie、不触发发送请求。用 dmid 和 stime 去重，seeking 事件推进代次。每批最多 240 条，屏幕最多 120 条，按轨道避免重叠；不支持高级脚本或特效的原有动画。播放器未暴露该结构时不创建弹幕层。
 
 适配依据为 2026-10-08 读取的 B 站公开播放器 nano 4.10.4（构建时间 2026-09-20）：core.js 暴露 getDanmakuX，npd.491.8e830665.js 管理 visualArray / textData / isHide / showed，npd.505.2d76eed1.js 配置弹幕筛选并将实例挂到播放器。以上内部结构可能随网站更新而改变，真实站点验收需独立于合成模型检查。
 
-全屏弹幕在独立绘制进程的 STA 线程创建窗口与更新字形位图，不在主 UI 线程逐帧绘制；待处理状态合并为最新快照，隐藏或退出时停止绘制。同屏拖动不会重复传输未变化的状态，也不会重置弹幕时钟；小窗位置更新按输入计时提交，不等待全屏透明绘制的合成帧。发布使用同版本 OpenCV Slim 原生运行库；图像处理流程保持一致，FFmpeg 离线解码继续使用外部工具。
+全屏弹幕仍在独立进程的 STA 线程接收快照和生成字形：WPF 只在接受新评论时将描边文字光栅化一次，Direct2D 将文字尺寸的位图上传到 DirectComposition 表面。DWM 持有每条评论的图层，执行位移及到期隐藏动画；不订阅 CompositionTarget.Rendering，也不每帧重建整屏透明绘制指令。高 DPI 长文本按 2048 像素分块，保留完整内容并避开单纹理尺寸限制。普通快照沿用系统动画，暂停、倍速或超过 0.1 秒的时钟偏差才重定位；超过 1.25 秒的跳转清理旧图层。待处理状态合并为最新快照，同屏拖动不重复传输未变化的状态。跨显示器按物理边界与目标 DPI 重建图层；隐藏、退出和关闭释放资源。小窗位置更新继续按输入计时提交，不等待弹幕绘制。图形初始化或上传失败会退出弹幕进程，由主窗既有失败反馈报告，不切回整屏 WPF 绘制。发布仍为不自带 .NET 的单文件，新增图形绑定合并到程序内。OpenCV Slim 和外部 FFmpeg 流程保持一致。

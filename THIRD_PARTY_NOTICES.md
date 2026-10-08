@@ -8,6 +8,8 @@
 | Microsoft.Web.WebView2 SDK | 1.0.4258.31 | 包内 BSD 条款，全文见 licenses/WEBVIEW2-LICENSE.txt | https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.4258.31 |
 | OpenCvSharp4 / Windows Slim runtime | 4.13.0.20260627 | Apache-2.0，Copyright 2008-2026 shimat；全文见 licenses/OPENCVSHARP-LICENSE.txt | https://github.com/shimat/opencvsharp |
 | OpenCV | 原生 runtime 内组件 | Apache-2.0，全文见 licenses/OPENCV-LICENSE.txt | https://github.com/opencv/opencv |
+| Vortice.Windows / Vortice.Mathematics | 图形绑定 3.8.3 / 数学库 2.1.0 | MIT，Copyright (c) Amer Koleci and Contributors；全文见 licenses/VORTICE-LICENSE.txt | https://github.com/amerkoleci/Vortice.Windows |
+| SharpGen.Runtime / SharpGen.Runtime.COM | 2.4.2-beta，Vortice 的传递依赖 | MIT，Copyright 2010-2017 Alexandre Mutel, 2017-2023 Jeremy Koritzinsky, 2023-2024 Amer Koleci；全文见 licenses/SHARPGEN-LICENSE.txt | https://github.com/SharpGenTools/SharpGenTools |
 | .NET / WPF / Windows Forms | 自包含发布时随包提供 | Microsoft .NET Library 许可及组件第三方声明；见 licenses/DOTNET-LICENSE.txt、licenses/DOTNET-THIRD-PARTY-NOTICES.txt | https://github.com/dotnet/runtime |
 
 Microsoft Edge WebView2 **Runtime** 由用户安装，适用微软的独立分发与使用条款；本包不打包整个浏览器。NuGet 传递依赖和原生库所含第三方组件亦适用其原始条款，更新依赖时须检查对应声明。

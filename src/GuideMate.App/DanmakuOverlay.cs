@@ -11,7 +11,7 @@ namespace GuideMate.App;
 internal sealed record DanmakuState(bool Visible, Rectangle Bounds, double Area, double Opacity,
     double FontScale, double Speed, JsonElement Items, double Time, bool Paused, double Rate, int Generation, long Snapshot);
 
-// WPF dispatchers share a compositor within one process. Isolate the full-screen layered window too.
+// Keep source ingestion and glyph uploads away from the video UI process.
 internal sealed class DanmakuOverlay : IDisposable
 {
     private readonly Channel<DanmakuState> _states = Channel.CreateBounded<DanmakuState>(new BoundedChannelOptions(1)
@@ -90,7 +90,7 @@ internal sealed class DanmakuOverlay : IDisposable
     private sealed class Renderer
     {
         private readonly object _gate = new();
-        private readonly DanmakuWindow _window = new() { Style = null };
+        private readonly DanmakuWindow _window = new();
         private DanmakuState? _pending;
         private bool _scheduled;
         private int _generation = -1;
@@ -118,7 +118,18 @@ internal sealed class DanmakuOverlay : IDisposable
                 if (_pending == null) return;
                 state = _pending; _pending = null;
             }
-            var window = _window!;
+            try { Apply(state); }
+            catch (Exception ex) when (ex is SharpGen.Runtime.SharpGenException or System.ComponentModel.Win32Exception)
+            {
+                Trace.WriteLine("Danmaku composition: " + ex.Message);
+                Close();
+                System.Windows.Application.Current.Shutdown(1);
+            }
+        }
+
+        private void Apply(DanmakuState state)
+        {
+            var window = _window;
             if (!state.Visible) { window.Hide(); _snapshot = -1; return; }
             var showing = !window.IsVisible;
             if (showing) window.Show();

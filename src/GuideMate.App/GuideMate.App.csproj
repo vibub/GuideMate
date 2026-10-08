@@ -15,6 +15,8 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="WPF-UI" Version="4.3.0" />
+    <PackageReference Include="Vortice.DirectComposition" Version="3.8.3" />
+    <PackageReference Include="Vortice.Direct3D11" Version="3.8.3" />
     <Resource Include="../../assets/branding/guidemate.ico" Link="Assets/guidemate.ico" />
     <ProjectReference Include="../GuideMate.Core/GuideMate.Core.csproj" />
     <ProjectReference Include="../GuideMate.Vision/GuideMate.Vision.csproj" />
