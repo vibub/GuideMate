@@ -80,7 +80,8 @@ public sealed partial class MainWindow : Window
         _onlineVisionLiveUrl = onlineVisionLiveUrl;
         _danmakuProbe = danmakuProbe; _danmakuLiveUrl = danmakuLiveUrl;
         _store = new(dataPath); _settings = _store.Load();
-        Icon = new System.Windows.Media.Imaging.BitmapImage(new Uri("pack://application:,,,/Assets/guidemate.ico"));
+        // Preserve the ICO decoder so WPF selects the matching frame for each system icon size.
+        Icon = System.Windows.Media.Imaging.BitmapFrame.Create(new Uri("pack://application:,,,/Assets/guidemate.ico"));
         Title = "随引"; Width = Math.Clamp(_settings.Width, 860, 1800); Height = Math.Clamp(_settings.Height, 500, 1200);
         Left = _settings.Left; Top = _settings.Top; MinWidth = 860; MinHeight = 500;
         WindowStyle = WindowStyle.None; AllowsTransparency = true; Background = Brushes.Transparent;
