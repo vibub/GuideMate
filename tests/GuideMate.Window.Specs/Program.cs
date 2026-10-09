@@ -1,9 +1,11 @@
 using Button = System.Windows.Controls.Button;
+using CheckBox = System.Windows.Controls.CheckBox;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows.Interop;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using Point = System.Windows.Point;
 using System.Windows;
 using System.Windows.Controls;
@@ -47,39 +49,57 @@ internal static class Program
         app.Startup -= (StartupEventHandler)Delegate.CreateDelegate(typeof(StartupEventHandler), app,
             typeof(GuideMate.App.App).GetMethod("OnStartup", Private, null, [typeof(object), typeof(StartupEventArgs)], null)!);
         app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        System.Threading.SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
         Wpf.Ui.Appearance.ApplicationAccentColorManager.Apply(System.Windows.Media.Color.FromRgb(19, 124, 102));
         MainWindow? window = null;
         try
         {
             window = Open();
+            Check(Field<Window?>(window, "_overlay")?.IsVisible != true && store.Load().SubtitleOverlay,
+                "normal startup keeps the subtitle preference without showing its window");
+            window.WindowState = WindowState.Maximized; Pump(60);
+            Check(Field<Window?>(window, "_overlay")?.IsVisible != true,
+                "maximized normal mode does not show the subtitle window");
+            window.WindowState = WindowState.Normal; Pump(60);
+            Invoke(window, "ToggleImmersive"); Pump(100);
             var overlay = Field<Window>(window, "_overlay");
-            Check(Near(overlay.Width, 620) && overlay.SizeToContent == SizeToContent.Height,
+            Check(overlay.IsVisible && Near(overlay.Width, 620) && overlay.SizeToContent == SizeToContent.Height,
                 "subtitle restores saved width while retaining automatic height");
             overlay.Left = 240; overlay.Top = 140; overlay.Width = 780;
             Field<Action?>(overlay, "PlacementChanged")?.Invoke();
             Check(store.Load().OverlayWidth == 780 && Near(store.Load().OverlayLeft, 240),
                 "subtitle placement event immediately saves width and position");
-            Invoke(window, "ToggleImmersive"); Pump(100);
             Check(Near(window.Width, 704) && Near(window.Height, 396) && Near(window.Left, 300),
                 "entering immersive restores its separate saved placement");
             window.Left = 310; window.Top = 240; window.Width = 800; window.Height = 450; Pump(60);
             window.SaveSettings();
             Check(store.Load().ImmersiveBounds == new WindowPlacement(310, 240, 800, 450), "immersive actual geometry saves");
             window.WindowState = WindowState.Minimized; Pump(50); window.SaveSettings();
+            Check(!overlay.IsVisible && store.Load().SubtitleOverlay,
+                "minimizing immersive mode hides subtitles without switching the preference off");
             Check(store.Load().ImmersiveBounds == new WindowPlacement(310, 240, 800, 450),
                 "minimized small window saves restore bounds rather than minimized coordinates");
             Invoke(window, "RestoreMainWindow"); Pump(50);
+            Check(overlay.IsVisible, "restoring immersive mode restores enabled subtitles");
             Invoke(window, "ToggleImmersive"); Pump(80);
+            Check(!overlay.IsVisible && store.Load().SubtitleOverlay,
+                "exiting immersive mode immediately hides subtitles and retains the saved preference");
             Check(Near(window.Width, 900) && Near(window.Height, 600) && Near(window.Left, 120),
                 "exiting immersive restores original normal window bounds");
-            Invoke(window, "ToggleImmersive"); Pump(80);
-            Check(Near(window.Width, 800) && Near(window.Height, 450) && Near(window.Left, 310),
-                "re-entering immersive preserves user resize and position");
             Invoke(window, "HideToTray"); Pump(30); Invoke(window, "RestoreMainWindow"); Pump(60);
-            Check(Near(window.Width, 800) && Near(window.Height, 450) && Near(overlay.Width, 780),
+            Check(!overlay.IsVisible, "normal hide and restore cannot reopen immersive-only subtitles");
+            Invoke(window, "ToggleImmersive"); Pump(80);
+            Check(overlay.IsVisible && Near(window.Width, 800) && Near(window.Height, 450) && Near(window.Left, 310),
+                "re-entering immersive preserves user resize and position");
+            Invoke(window, "HideToTray"); Pump(30);
+            Check(!overlay.IsVisible, "hiding the immersive main window hides subtitles");
+            Invoke(window, "RestoreMainWindow"); Pump(60);
+            Check(overlay.IsVisible && Near(window.Width, 800) && Near(window.Height, 450) && Near(overlay.Width, 780),
                 "hide and restore preserve both window placements");
             window.Close(); window = null; Pump(60);
             window = Open();
+            Check(Field<Window?>(window, "_overlay")?.IsVisible != true,
+                "reloaded normal window waits for immersive mode before showing subtitles");
             Invoke(window, "ToggleImmersive"); Pump(80);
             overlay = Field<Window>(window, "_overlay");
             Check(Near(window.Width, 800) && Near(window.Height, 450) && Near(window.Left, 310),
@@ -87,6 +107,46 @@ internal static class Program
             Check(Near(overlay.Width, 780) && Near(overlay.Left, 240) && Near(overlay.Top, 140),
                 "new subtitle window restores saved width and position");
             Check(store.Load().Bookmarks[0].Position == 42, "window saving preserves video library");
+            var dragHandle = Field<Thumb>(window, "_dragHandle");
+            dragHandle.Visibility = Visibility.Visible;
+            var singleClick = HandleMouseDown(1);
+            dragHandle.RaiseEvent(singleClick);
+            Check(!singleClick.Handled && Field<bool>(window, "_immersive"),
+                "single-clicking the move handle leaves immersive mode active");
+            singleClick.RoutedEvent = UIElement.MouseLeftButtonDownEvent;
+            dragHandle.RaiseEvent(singleClick);
+            Check(dragHandle.IsDragging && Field<object?>(window, "_dragMovePump") != null,
+                "single-click still starts the existing captured drag and coalesced move pump");
+            var doubleClick = HandleMouseDown(2);
+            dragHandle.RaiseEvent(doubleClick);
+            doubleClick.RoutedEvent = UIElement.MouseLeftButtonDownEvent;
+            dragHandle.RaiseEvent(doubleClick);
+            Check(doubleClick.Handled && !Field<bool>(window, "_immersive") && !overlay.IsVisible,
+                "double-clicking the move handle exits immersive mode and immediately hides subtitles");
+            Check(!dragHandle.IsDragging && !dragHandle.IsMouseCaptured && Field<object?>(window, "_dragMovePump") == null,
+                "double-click consumes the press and cancels drag capture and pending moves");
+            var restored = Bounds(window); Pump(100);
+            Check(Bounds(window) == restored && Near(window.Width, 900) && Near(window.Height, 600) && Near(window.Left, 120),
+                "double-click restores original normal bounds without a delayed drag move");
+            window.WindowState = WindowState.Maximized; Pump(60);
+            Invoke(window, "ToggleImmersive"); Pump(80);
+            doubleClick = HandleMouseDown(2); dragHandle.RaiseEvent(doubleClick); Pump(80);
+            Check(window.WindowState == WindowState.Maximized && !Field<bool>(window, "_immersive") && !overlay.IsVisible,
+                "move-handle double-click restores a previously maximized window");
+            window.WindowState = WindowState.Normal; Pump(60);
+            Invoke(window, "ToggleImmersive"); Pump(80);
+            var overlayToggle = Field<CheckBox>(window, "_overlayToggle");
+            overlayToggle.IsChecked = false;
+            Invoke(window, "ToggleImmersive"); Invoke(window, "ToggleImmersive"); Pump(80);
+            Check(!overlay.IsVisible && !Field<AppSettings>(window, "_settings").SubtitleOverlay,
+                "disabled subtitles stay disabled across immersive exit and re-entry");
+            overlayToggle.IsChecked = true; Pump(50);
+            Check(overlay.IsVisible && Near(overlay.Width, 780) && Near(overlay.Left, 240),
+                "enabling immersive subtitles restores their existing placement");
+            Invoke(window, "EmergencyRestore"); Pump(80);
+            Check(!overlay.IsVisible && !Field<bool>(window, "_immersive") && Field<AppSettings>(window, "_settings").SubtitleOverlay,
+                "emergency exit hides subtitles without disabling them");
+            Invoke(window, "ToggleImmersive"); Pump(80);
             var sizeGrip = Descendants(window).OfType<Thumb>().Single(grip =>
                 System.Windows.Automation.AutomationProperties.GetName(grip) == "窗口缩放：右下角");
             var source = HwndSource.FromHwnd(new WindowInteropHelper(window).Handle);
@@ -234,6 +294,13 @@ internal static class Program
             Invoke(result, "UpdateOverlay"); Pump(50);
             return result;
         }
+    }
+    private static MouseButtonEventArgs HandleMouseDown(int clicks)
+    {
+        var args = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
+            { RoutedEvent = UIElement.PreviewMouseLeftButtonDownEvent };
+        typeof(MouseButtonEventArgs).GetProperty(nameof(MouseButtonEventArgs.ClickCount))!.SetValue(args, clicks);
+        return args;
     }
     internal static T Field<T>(object target, string name) => (T)target.GetType().GetField(name, Private)!.GetValue(target)!;
     internal static object? Invoke(object target, string name, params object[] args) => target.GetType().GetMethod(name, Private)!.Invoke(target, args);

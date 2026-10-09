@@ -169,7 +169,7 @@ public sealed partial class MainWindow : Window
         _subtitleSource.Margin = new(0, 6, 0, 4); follow.Children.Add(_subtitleSource);
         follow.Children.Add(Ui.Command("\uE8A5", "导入字幕", ImportSubtitles));
         follow.Children.Add(Ui.Command("\uE894", "清除导入字幕", () => { _cues = []; _lastCaption = ""; _subtitleSource.Text = "网页字幕"; }));
-        _overlayToggle = Ui.Toggle("字幕与方向浮窗", _settings.SubtitleOverlay, value => { _settings.SubtitleOverlay = value; UpdateOverlay(); });
+        _overlayToggle = Ui.Toggle("字幕与方向浮窗（仅沉浸模式）", _settings.SubtitleOverlay, value => { _settings.SubtitleOverlay = value; UpdateOverlay(); });
         follow.Children.Add(_overlayToggle);
         var offsetRow = new Grid(); offsetRow.ColumnDefinitions.Add(new()); offsetRow.ColumnDefinitions.Add(new() { Width = new(74) });
         offsetRow.Children.Add(Ui.Text("字幕延迟（秒）", 12));
@@ -210,10 +210,16 @@ public sealed partial class MainWindow : Window
         tabs.Items.Add(new TabItem { Header = "收藏", Content = BuildLibrary(_bookmarks, true) });
         tabs.Items.Add(new TabItem { Header = "历史", Content = BuildLibrary(_history, false) });
         Grid.SetColumn(tabs, 1); _workspace.Children.Add(tabs);
-        _dragHandle = new Thumb { Style = (Style)FindResource("ImmersiveDragHandle"), ToolTip = "拖动小窗" };
+        _dragHandle = new Thumb { Style = (Style)FindResource("ImmersiveDragHandle"), ToolTip = "拖动小窗；双击退出沉浸模式" };
         System.Windows.Automation.AutomationProperties.SetName(_dragHandle, "拖动小窗");
         _dragHandle.HorizontalAlignment = HorizontalAlignment.Left; _dragHandle.VerticalAlignment = VerticalAlignment.Top;
         _dragHandle.Margin = new(8); _dragHandle.Visibility = Visibility.Collapsed; _dragHandle.Opacity = 0.7;
+        _dragHandle.PreviewMouseLeftButtonDown += (_, e) =>
+        {
+            if (!_immersive || e.ClickCount != 2) return;
+            e.Handled = true;
+            ToggleImmersive();
+        };
         _dragHandle.DragStarted += (_, e) => BeginImmersiveDrag(e);
         _dragHandle.DragCompleted += (_, e) => { FinishImmersiveDrag(e.Canceled); SampleImmersiveCursor(); };
         _workspace.Children.Add(_dragHandle);
@@ -666,7 +672,7 @@ public sealed partial class MainWindow : Window
             WindowState = _normalWindowState;
             Fire(() => CommandAsync("focusOff"));
         }
-        ApplyWindowSwitcher(); UpdateClip(); UpdateDanmakuOverlay(); UpdateImmersiveControls();
+        ApplyWindowSwitcher(); UpdateClip(); UpdateOverlay(); UpdateDanmakuOverlay(); UpdateImmersiveControls();
         SaveSettings();
         Dispatcher.InvokeAsync(() => { _browser.Visibility = Visibility.Visible; _browser.UpdateLayout(); UpdateSmallWindowLayout(); UpdateXRayTracking(); }, DispatcherPriority.Loaded);
     }
@@ -721,7 +727,7 @@ public sealed partial class MainWindow : Window
 
     private void UpdateOverlay()
     {
-        if (!_settings.SubtitleOverlay || !IsVisible || WindowState == WindowState.Minimized) { _overlay?.Hide(); return; }
+        if (!_immersive || !_settings.SubtitleOverlay || !IsVisible || WindowState == WindowState.Minimized) { _overlay?.Hide(); return; }
         if (_overlay == null)
         {
             _overlay = new() { Left = _settings.OverlayLeft, Top = _settings.OverlayTop, Width = Math.Max(260, _settings.OverlayWidth) };
