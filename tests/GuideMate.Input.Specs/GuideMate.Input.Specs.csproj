@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/GuideMate.Core/GuideMate.Core.csproj" />
+    <Compile Include="../../src/GuideMate.App/NativeHotkeys.cs" Link="NativeHotkeys.cs" />
+    <Compile Include="../../src/GuideMate.App/GlobalUsings.cs" Link="GlobalUsings.cs" />
+  </ItemGroup>
+</Project>

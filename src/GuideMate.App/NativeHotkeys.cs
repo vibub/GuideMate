@@ -13,6 +13,9 @@ internal sealed class NativeHotkeys : IDisposable
     private readonly Dictionary<int, Binding> _actions = [];
     private readonly Dictionary<(uint Modifiers, uint Key), Binding> _mouseActions = [];
     private readonly HashSet<uint> _consumedMouseButtons = [];
+    private readonly HashSet<uint> _pressedMouseButtons = [];
+    private readonly HashSet<uint> _modifierKeys = [];
+    private bool _rawInputRegistered;
     private readonly MouseHookProc _mouseCallback;
     private nint _mouseHook;
     private int _generation;
@@ -32,6 +35,7 @@ internal sealed class NativeHotkeys : IDisposable
     public event Action<string>? Pressed;
     public event Action? TemporaryRateReleased;
     internal bool MouseHookAvailable => _mouseHook != 0;
+    internal bool RawInputAvailable => _rawInputRegistered;
     internal static nint CurrentForegroundWindow => GetForegroundWindow();
 
     public NativeHotkeys(Window window)
@@ -43,11 +47,10 @@ internal sealed class NativeHotkeys : IDisposable
         _holdTimer.Tick += (_, _) =>
         {
             if (_held is not { } key) return;
-            var buttonDown = IsMouseKey(key.Key) ? _consumedMouseButtons.Contains(key.Key) : GetAsyncKeyState((int)key.Key) < 0;
-            var down = buttonDown
-                && ((key.Modifiers & 2) == 0 || GetAsyncKeyState(0x11) < 0)
-                && ((key.Modifiers & 1) == 0 || GetAsyncKeyState(0x12) < 0)
-                && ((key.Modifiers & 4) == 0 || GetAsyncKeyState(0x10) < 0);
+            var mouse = IsMouseKey(key.Key);
+            var buttonDown = mouse ? _pressedMouseButtons.Contains(key.Key) : GetAsyncKeyState((int)key.Key) < 0;
+            var modifiers = mouse ? MouseModifiers : AsyncModifiers();
+            var down = buttonDown && (modifiers & key.Modifiers) == key.Modifiers;
             PollHeldBinding(Environment.TickCount64, down, GetForegroundWindow());
         };
         EmergencyAvailable = RegisterHotKey(_handle, EmergencyId, 0x4003, (uint)KeyInterop.VirtualKeyFromKey(Key.F10));
@@ -155,6 +158,18 @@ internal sealed class NativeHotkeys : IDisposable
             var (modifiers, key) = binding.Input;
             if (IsMouseKey(key))
             {
+                if (!_rawInputRegistered)
+                {
+                    // INPUTSINK (not EXINPUTSINK) also receives input when the foreground game uses Raw Input.
+                    RawInputDevice[] devices = [new(1, 2, 0x100, _handle), new(1, 6, 0x100, _handle)];
+                    if (!RegisterRawInputDevices(devices, (uint)devices.Length, (uint)Marshal.SizeOf<RawInputDevice>()))
+                        return $"鼠标侧键原始输入注册失败（错误 {Marshal.GetLastWin32Error()}）。";
+                    _rawInputRegistered = true;
+                    for (uint modifier = 0xA0; modifier <= 0xA5; modifier++)
+                        if (GetAsyncKeyState((int)modifier) < 0) _modifierKeys.Add(modifier);
+                    foreach (var modifier in new uint[] { 0x5B, 0x5C })
+                        if (GetAsyncKeyState((int)modifier) < 0) _modifierKeys.Add(modifier);
+                }
                 if (_mouseHook == 0)
                 {
                     _mouseHook = SetWindowsHookEx(14, _mouseCallback, GetModuleHandle(null), 0);
@@ -175,6 +190,26 @@ internal sealed class NativeHotkeys : IDisposable
     }
     private nint OnMessage(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
     {
+        if (message == 0x00FF && _rawInputRegistered && !_disposed)
+        {
+            var size = (uint)Marshal.SizeOf<RawInput>();
+            var headerSize = (uint)Marshal.SizeOf<RawInputHeader>();
+            var read = GetRawInputData(lParam, 0x10000003, out var input, ref size, headerSize);
+            if (read != uint.MaxValue && input.Header.Size <= read
+                && ((input.Header.Type == 0 && read >= headerSize + 24)
+                    || (input.Header.Type == 1 && read >= headerSize + 16)))
+            {
+                // Do not queue motion, wheel, ordinary clicks or non-modifier keys.
+                if (input.Header.Type == 0 && (input.Data.Mouse.ButtonFlags & 0x03C0) == 0) return 0;
+                if (input.Header.Type == 1 && input.Data.Keyboard.VirtualKey is not
+                    (0x10 or 0x11 or 0x12 or 0x5B or 0x5C or >= 0xA0 and <= 0xA5)) return 0;
+                var now = Environment.TickCount64;
+                var timestamp = now - unchecked((uint)now - (uint)GetMessageTime());
+                ProcessRawInput(input, GetForegroundWindow(), timestamp);
+            }
+            // Leave WM_INPUT unhandled so HwndSource/DefWindowProc performs native cleanup.
+            return 0;
+        }
         if (message != 0x0312) return 0;
         var id = (int)wParam;
         if (id == EmergencyId) { handled = true; Pressed?.Invoke("Emergency"); }
@@ -231,13 +266,64 @@ internal sealed class NativeHotkeys : IDisposable
             // Ignore injected input; inspect only side-button messages, never mouse motion.
             if (key != 0 && (data.Flags & 1) == 0)
             {
-                var modifiers = (GetAsyncKeyState(0x11) < 0 ? 2u : 0u) | (GetAsyncKeyState(0x12) < 0 ? 1u : 0u)
-                    | (GetAsyncKeyState(0x10) < 0 ? 4u : 0u);
-                if (GetAsyncKeyState(0x5B) < 0 || GetAsyncKeyState(0x5C) < 0) modifiers |= 8;
-                if (ProcessMouseButton(key, wParam.ToInt64() == 0x020B, modifiers, GetForegroundWindow())) return 1;
+                // The hook only suppresses bound legacy clicks. Raw Input is the sole action source:
+                // another hook can stop this chain, and dispatching from both paths would double-fire.
+                if (ConsumeMouseButton(key, wParam.ToInt64() == 0x020B, AsyncModifiers())) return 1;
             }
         }
         return CallNextHookEx(_mouseHook, code, wParam, lParam);
+    }
+
+    private static uint AsyncModifiers() => (GetAsyncKeyState(0x11) < 0 ? 2u : 0u)
+        | (GetAsyncKeyState(0x12) < 0 ? 1u : 0u) | (GetAsyncKeyState(0x10) < 0 ? 4u : 0u)
+        | (GetAsyncKeyState(0x5B) < 0 || GetAsyncKeyState(0x5C) < 0 ? 8u : 0u);
+
+    private uint MouseModifiers => (_modifierKeys.Contains(0xA2) || _modifierKeys.Contains(0xA3) ? 2u : 0u)
+        | (_modifierKeys.Contains(0xA4) || _modifierKeys.Contains(0xA5) ? 1u : 0u)
+        | (_modifierKeys.Contains(0xA0) || _modifierKeys.Contains(0xA1) ? 4u : 0u)
+        | (_modifierKeys.Contains(0x5B) || _modifierKeys.Contains(0x5C) ? 8u : 0u);
+
+    internal bool ConsumeMouseButton(uint key, bool down, uint modifiers)
+    {
+        if (_disposed || !IsMouseKey(key)) return false;
+        if (!down) return _consumedMouseButtons.Remove(key);
+        if (_consumedMouseButtons.Contains(key)) return true;
+        if (OrdinaryBindingsSuspended || !_mouseActions.ContainsKey((modifiers, key))) return false;
+        _consumedMouseButtons.Add(key);
+        return true;
+    }
+
+    internal void ProcessRawInput(RawInput input, nint foreground, long timestamp)
+    {
+        if (_disposed || !_rawInputRegistered) return;
+        if (input.Header.Type == 1)
+        {
+            var keyboard = input.Data.Keyboard;
+            uint key = keyboard.VirtualKey;
+            // Generic modifiers need a side so releasing one does not clear the other.
+            key = key switch
+            {
+                0x10 => keyboard.MakeCode == 0x36 ? 0xA1u : 0xA0u,
+                0x11 => (keyboard.Flags & 2) != 0 ? 0xA3u : 0xA2u,
+                0x12 => (keyboard.Flags & 2) != 0 ? 0xA5u : 0xA4u,
+                _ => key
+            };
+            if (key is >= 0xA0 and <= 0xA5 or 0x5B or 0x5C)
+            {
+                if ((keyboard.Flags & 1) != 0) _modifierKeys.Remove(key);
+                else _modifierKeys.Add(key);
+                if (_held is { } held && IsMouseKey(held.Key))
+                    PollHeldBinding(timestamp, _pressedMouseButtons.Contains(held.Key)
+                        && (MouseModifiers & held.Modifiers) == held.Modifiers, foreground);
+            }
+            return;
+        }
+        if (input.Header.Type != 0) return;
+        var buttons = input.Data.Mouse.ButtonFlags;
+        if ((buttons & 0x0040) != 0) ProcessMouseButton(5, true, MouseModifiers, foreground, timestamp);
+        if ((buttons & 0x0080) != 0) ProcessMouseButton(5, false, MouseModifiers, foreground, timestamp);
+        if ((buttons & 0x0100) != 0) ProcessMouseButton(6, true, MouseModifiers, foreground, timestamp);
+        if ((buttons & 0x0200) != 0) ProcessMouseButton(6, false, MouseModifiers, foreground, timestamp);
     }
 
     internal bool ProcessMouseButton(uint key, bool down, uint modifiers, nint foreground, long? timestamp = null)
@@ -247,17 +333,17 @@ internal sealed class NativeHotkeys : IDisposable
         var time = timestamp ?? Environment.TickCount64;
         if (!down)
         {
-            if (!_consumedMouseButtons.Remove(key)) return false;
+            if (!_pressedMouseButtons.Remove(key)) return false;
             _source.Dispatcher.BeginInvoke(() =>
             {
                 if (!_disposed && generation == _generation && _held?.Key == key) PollHeldBinding(time, false, foreground);
             });
             return true;
         }
-        if (_consumedMouseButtons.Contains(key)) return true;
+        if (_pressedMouseButtons.Contains(key)) return true;
         if (OrdinaryBindingsSuspended || !_mouseActions.TryGetValue((modifiers, key), out var binding)) return false;
-        _consumedMouseButtons.Add(key);
-        // Keep the native hook short; execute application actions on the next dispatcher turn.
+        _pressedMouseButtons.Add(key);
+        // Preserve input order and cancel queued actions when bindings change.
         _source.Dispatcher.BeginInvoke(() =>
         {
             if (!_disposed && generation == _generation) Dispatch(binding, foreground, time);
@@ -283,6 +369,14 @@ internal sealed class NativeHotkeys : IDisposable
         Clear();
         if (_mouseHook != 0) { UnhookWindowsHookEx(_mouseHook); _mouseHook = 0; }
         _consumedMouseButtons.Clear();
+        _pressedMouseButtons.Clear();
+        if (_rawInputRegistered)
+        {
+            RawInputDevice[] devices = [new(1, 2, 1, 0), new(1, 6, 1, 0)];
+            RegisterRawInputDevices(devices, (uint)devices.Length, (uint)Marshal.SizeOf<RawInputDevice>());
+            _rawInputRegistered = false;
+        }
+        _modifierKeys.Clear();
         UnregisterHotKey(_handle, EmergencyId);
         _source.RemoveHook(OnMessage);
     }
@@ -319,6 +413,46 @@ internal sealed class NativeHotkeys : IDisposable
         public uint MouseData, Flags, Time;
         public nuint ExtraInfo;
     }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RawInputDevice(ushort page, ushort usage, uint flags, nint target)
+    {
+        public ushort UsagePage = page, Usage = usage;
+        public uint Flags = flags;
+        public nint Target = target;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct RawInputHeader
+    {
+        public uint Type, Size;
+        public nint Device;
+        public nuint WParam;
+    }
+    [StructLayout(LayoutKind.Explicit, Size = 24)]
+    internal struct RawMouse
+    {
+        [FieldOffset(4)] public ushort ButtonFlags;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct RawKeyboard
+    {
+        public ushort MakeCode, Flags, Reserved, VirtualKey;
+        public uint Message, ExtraInformation;
+    }
+    [StructLayout(LayoutKind.Explicit)]
+    internal struct RawInputData
+    {
+        [FieldOffset(0)] public RawMouse Mouse;
+        [FieldOffset(0)] public RawKeyboard Keyboard;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct RawInput
+    {
+        public RawInputHeader Header;
+        public RawInputData Data;
+    }
+    [DllImport("user32.dll", SetLastError = true)] private static extern bool RegisterRawInputDevices(RawInputDevice[] devices, uint count, uint size);
+    [DllImport("user32.dll", SetLastError = true)] private static extern uint GetRawInputData(nint input, uint command, out RawInput data, ref uint size, uint headerSize);
+    [DllImport("user32.dll")] private static extern int GetMessageTime();
     [DllImport("user32.dll", EntryPoint = "SetWindowsHookExW", SetLastError = true)] private static extern nint SetWindowsHookEx(int hook, MouseHookProc callback, nint module, uint thread);
     [DllImport("user32.dll")] private static extern bool UnhookWindowsHookEx(nint hook);
     [DllImport("user32.dll")] private static extern nint CallNextHookEx(nint hook, int code, nint wParam, nint lParam);
