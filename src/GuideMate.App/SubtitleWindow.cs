@@ -37,13 +37,26 @@ internal sealed class SubtitleWindow : Window
         Grid.SetRow(_captionHost, 1); grid.Children.Add(_captionHost); grid.Children.Add(_empty);
         var gripSurface = new FrameworkElementFactory(typeof(Border));
         gripSurface.SetValue(Border.BackgroundProperty, Brushes.Transparent);
-        var gripLabel = new FrameworkElementFactory(typeof(TextBlock));
-        gripLabel.SetValue(TextBlock.TextProperty, "↔");
-        gripLabel.SetValue(TextBlock.FontSizeProperty, 16d);
-        gripLabel.SetValue(TextBlock.ForegroundProperty, _kind.Foreground);
-        gripLabel.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center);
-        gripLabel.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
-        gripSurface.AppendChild(gripLabel);
+        // Match the triangular dot pattern of the original WPF resize grip; the Thumb still resizes width only.
+        var gripForeground = new LinearGradientBrush
+        {
+            StartPoint = new(0, 0.25), EndPoint = new(1, 0.75),
+            GradientStops = [new(Colors.White, 0.3), new(Color.FromRgb(187, 197, 215), 0.75), new(Color.FromRgb(109, 131, 169), 1)]
+        };
+        var gripPattern = new DrawingBrush(new GeometryDrawing(gripForeground, null, Geometry.Parse("M 0,0 L 2,0 L 2,2 L 0,2 Z")))
+        {
+            Viewbox = new(0, 0, 3, 3), Viewport = new(0, 0, 3, 3),
+            ViewboxUnits = BrushMappingMode.Absolute, ViewportUnits = BrushMappingMode.Absolute, TileMode = TileMode.Tile
+        };
+        var gripIcon = new FrameworkElementFactory(typeof(System.Windows.Shapes.Path));
+        gripIcon.SetValue(System.Windows.Shapes.Path.DataProperty, Geometry.Parse("M 9,0 L 11,0 L 11,11 L 0,11 L 0,9 L 3,9 L 3,6 L 6,6 L 6,3 L 9,3 Z"));
+        gripIcon.SetValue(System.Windows.Shapes.Path.FillProperty, gripPattern);
+        gripIcon.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Right);
+        gripIcon.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Bottom);
+        gripIcon.SetValue(FrameworkElement.MarginProperty, new Thickness(0, 0, 2, 2));
+        gripIcon.SetValue(UIElement.SnapsToDevicePixelsProperty, true);
+        gripIcon.SetValue(UIElement.IsHitTestVisibleProperty, false);
+        gripSurface.AppendChild(gripIcon);
         _widthGrip.Template = new ControlTemplate(typeof(Thumb)) { VisualTree = gripSurface };
         _widthGrip.DragStarted += (_, e) =>
         {
