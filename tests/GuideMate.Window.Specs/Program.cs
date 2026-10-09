@@ -93,8 +93,15 @@ internal static class Program
             Invoke(window, "ResizeWindowAt", new Point(pointer.X + 150, pointer.Y + 90));
             Invoke(window, "CancelWindowResize"); Pump(50);
             var after = Bounds(window);
-            Check(Math.Abs(after.Width - before.Width - 150) <= 2 && Math.Abs(after.Height - before.Height - 90) <= 2,
-                "custom corner resize updates actual desktop window in physical pixels");
+            Check(after.Width > before.Width && Math.Abs(after.Width - after.Height * 16 / 9) <= 2
+                && after.Left == before.Left && after.Top == before.Top,
+                "custom corner resize preserves actual video ratio and opposite corner in physical pixels");
+            Check(Math.Abs(Field<double?>(window, "_videoAspectRatio")!.Value - 16d / 9) < 0.001,
+                "local video state supplies aspect ratio independently of online vision");
+            var browser = Field<Microsoft.Web.WebView2.Wpf.WebView2CompositionControl>(window, "_browser");
+            Check(Math.Abs(browser.ActualWidth / browser.ActualHeight - 16d / 9) < 0.01,
+                "rendered immersive video surface has no extra letterbox from window ratio");
+            Capture(window, Path.Combine(output, "aspect-resize.png"));
             Check(nativeSizeLoop == 0 && window.ResizeMode == ResizeMode.NoResize,
                 "custom resize never enters native sizing/moving loop used by Snap");
             var canceled = Bounds(window); Pump(80);

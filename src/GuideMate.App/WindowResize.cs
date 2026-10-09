@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
 
@@ -10,6 +11,8 @@ public sealed partial class MainWindow
     private WindowPlacement _resizeOrigin = new(0, 0, 1, 1);
     private Point _resizeOriginMouse;
     private ResizeEdges _resizeEdges;
+    private double? _resizeAspectRatio;
+    private double? _videoAspectRatio;
 
     private void BuildWindowResizeControls()
     {
@@ -52,6 +55,7 @@ public sealed partial class MainWindow
         _resizeGrip = grip; _resizeEdges = edges;
         _resizeOrigin = new(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top);
         _resizeOriginMouse = new(cursor.X, cursor.Y);
+        _resizeAspectRatio = _immersive ? ImmersiveAspectRatio : null;
         _resizePump = new(Dispatcher, OnWindowResizeTick);
     }
     private void OnWindowResizeTick()
@@ -73,7 +77,7 @@ public sealed partial class MainWindow
         var transform = HwndSource.FromHwnd(handle).CompositionTarget.TransformToDevice;
         var bounds = WindowResizing.Calculate(_resizeOrigin, _resizeEdges,
             cursor.X - _resizeOriginMouse.X, cursor.Y - _resizeOriginMouse.Y,
-            MinWidth * transform.M11, MinHeight * transform.M22);
+            MinWidth * transform.M11, MinHeight * transform.M22, _resizeAspectRatio);
         // Update both dimensions and coordinates in one native call, without SC_SIZE/SC_MOVE or Snap.
         MoveDragWindow(handle, 0, (int)Math.Round(bounds.Left), (int)Math.Round(bounds.Top),
             (int)Math.Round(bounds.Width), (int)Math.Round(bounds.Height), 0x0014);
@@ -87,4 +91,31 @@ public sealed partial class MainWindow
         if (!canceled) SaveSettings();
     }
     private void CancelWindowResize() => CompleteWindowResize(true);
+
+    private double ImmersiveAspectRatio => _videoAspectRatio
+        ?? (_settings.ImmersiveBounds is { } saved ? saved.Width / saved.Height : 16d / 9);
+
+    private void ResetVideoAspectRatio()
+    {
+        CancelWindowResize();
+        _videoAspectRatio = null;
+    }
+
+    private void UpdateVideoAspectRatio(JsonElement state)
+    {
+        var width = Finite(state, "width", 0); var height = Finite(state, "height", 0);
+        if (width <= 0 || height <= 0) return;
+        var ratio = width / height;
+        if (!double.IsFinite(ratio) || ratio <= 0 || _videoAspectRatio == ratio) return;
+        CancelWindowResize();
+        _videoAspectRatio = ratio;
+        if (_immersive && WindowState == WindowState.Normal) ApplyImmersiveAspectRatio();
+    }
+
+    private void ApplyImmersiveAspectRatio()
+    {
+        var bounds = WindowResizing.Calculate(new(Left, Top, Width, Height), ResizeEdges.Right,
+            0, 0, MinWidth, MinHeight, ImmersiveAspectRatio);
+        Width = bounds.Width; Height = bounds.Height;
+    }
 }

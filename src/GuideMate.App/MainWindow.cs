@@ -299,7 +299,7 @@ public sealed partial class MainWindow : Window
             _videoRouter.MessageReceived += OnWebMessage;
             _videoRouter.ActiveChanged += () =>
             {
-                ResetDanmaku(); ResetOnlineVision(); UpdateDirection();
+                ResetVideoAspectRatio(); ResetDanmaku(); ResetOnlineVision(); UpdateDirection();
                 _keys?.CancelTemporaryRate(); Fire(EndTemporaryRateAsync);
                 if (_immersive) Fire(() => CommandAsync("focusOn"));
             };
@@ -308,7 +308,7 @@ public sealed partial class MainWindow : Window
                 if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https" or "about"))
                 { e.Cancel = true; _status.Text = "仅支持 http/https 网页和应用本地播放器。"; return; }
                 UpdateHistory();
-                ResetDanmaku(); ResetOnlineVision();
+                ResetVideoAspectRatio(); ResetDanmaku(); ResetOnlineVision();
                 _keys?.CancelTemporaryRate();
                 _temporaryRateActive = false; _temporaryRestoreRate = null; _mediaKey = "";
                 var samePage = e.Uri == _url;
@@ -359,7 +359,7 @@ public sealed partial class MainWindow : Window
             if (type.GetString() == "error") { _notice = root.GetProperty("message").GetString() ?? "播放失败"; _status.Text = _notice; return; }
             if (type.GetString() == "no-video")
             {
-                ResetDanmaku(); InvalidateOnlineSample();
+                ResetVideoAspectRatio(); ResetDanmaku(); InvalidateOnlineSample();
                 _position = _duration = 0; _paused = true; _clock.Text = "00:00 / 00:00";
                 _timeline.Value = 0; _timeline.Maximum = 1; ((TextBlock)_play.Content).Text = "\uE768";
                 CancelEdgeSeek(); UpdateEdgeProgress();
@@ -370,7 +370,7 @@ public sealed partial class MainWindow : Window
             var mediaKey = root.TryGetProperty("mediaKey", out var media) ? media.GetString() ?? "" : "";
             if (_mediaKey.Length > 0 && mediaKey != _mediaKey)
             {
-                ResetDanmaku();
+                ResetVideoAspectRatio(); ResetDanmaku();
                 _keys?.CancelTemporaryRate(); Fire(EndTemporaryRateAsync);
                 _cues = []; _combatEvents.Clear(); _lastCaption = ""; _subtitleSource.Text = "网页字幕"; _notice = "";
                 LoadVisualTrack();
@@ -379,6 +379,7 @@ public sealed partial class MainWindow : Window
             _mediaKey = mediaKey;
             _position = Finite(root, "time", 0); _duration = Finite(root, "duration", 0);
             _paused = root.GetProperty("paused").GetBoolean();
+            UpdateVideoAspectRatio(root);
             UpdateOnlineVisionState(root);
             var rate = Math.Clamp(Finite(root, "rate", 1), 0.25, 4);
             SyncDanmaku(root, rate);
@@ -639,6 +640,7 @@ public sealed partial class MainWindow : Window
             var bounds = _settings.ImmersiveBounds ?? new WindowPlacement(Left, Top, 640, 360);
             Width = Math.Max(MinWidth, bounds.Width); Height = Math.Max(MinHeight, bounds.Height);
             Left = bounds.Left; Top = bounds.Top;
+            ApplyImmersiveAspectRatio();
             Ui.PlaceVisible(this);
             Fire(() => CommandAsync("focusOn"));
         }

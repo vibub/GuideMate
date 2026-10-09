@@ -295,4 +295,28 @@ Check(missingProfileRejected && !Directory.Exists(selectedProfile), "missing sel
 File.WriteAllText(Path.Combine(defaultProfile, "active-profile.json"), "{\"Directory\":\"\"}");
 Check(Rejected(() => DataDirectory.Resolve(defaultProfile, null, false)), "invalid profile selection is not silently reset");
 Directory.Delete(profileTest, true);
+var resizeOrigin = new WindowPlacement(-1200, -100, 640, 360);
+foreach (var ratio in new[] { 16d / 9, 4d / 3, 9d / 16 })
+{
+    foreach (var edges in new[] { ResizeEdges.Left, ResizeEdges.Right, ResizeEdges.Top, ResizeEdges.Bottom,
+        ResizeEdges.Left | ResizeEdges.Top, ResizeEdges.Right | ResizeEdges.Top,
+        ResizeEdges.Left | ResizeEdges.Bottom, ResizeEdges.Right | ResizeEdges.Bottom })
+    {
+        var fitted = new WindowPlacement(-1200, -100, 640, 640 / ratio);
+        var resized = WindowResizing.Calculate(fitted, edges, 150, 90, 320, 180, ratio);
+        Check(Math.Abs(resized.Width / resized.Height - ratio) < 0.00001 && resized.Width >= 320 && resized.Height >= 180,
+            $"aspect resize preserves {ratio:0.###} ratio and minimums at {edges}");
+        var anchors = ((edges & ResizeEdges.Left) == 0 || Math.Abs(resized.Left + resized.Width - fitted.Left - fitted.Width) < 0.00001)
+            && ((edges & ResizeEdges.Top) == 0 || Math.Abs(resized.Top + resized.Height - fitted.Top - fitted.Height) < 0.00001);
+        Check(anchors, $"aspect resize keeps opposite anchors at negative screen coordinates for {edges}");
+    }
+    var minimum = WindowResizing.Calculate(resizeOrigin, ResizeEdges.Right | ResizeEdges.Bottom, -2000, -2000, 320, 180, ratio);
+    Check(minimum.Width >= 320 && minimum.Height >= 180 && Math.Abs(minimum.Width / minimum.Height - ratio) < 0.00001,
+        $"inverted drag respects joint minimums for {ratio:0.###}");
+}
+var freeResize = WindowResizing.Calculate(resizeOrigin, ResizeEdges.Left | ResizeEdges.Top, 100, 40, 100, 100);
+Check(freeResize == new WindowPlacement(-1100, -60, 540, 320), "normal window retains free resizing and opposite corner");
+var verticalCorner = WindowResizing.Calculate(resizeOrigin, ResizeEdges.Right | ResizeEdges.Bottom, 0, 100, 320, 180, 16d / 9);
+Check(verticalCorner.Width > resizeOrigin.Width && verticalCorner.Height > resizeOrigin.Height,
+    "vertical-only corner gesture still resizes fixed-ratio window");
 Console.WriteLine($"{checks} checks passed.");
