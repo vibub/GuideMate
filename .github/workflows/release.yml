@@ -1,6 +1,7 @@
 name: Release draft
 
 on:
+  workflow_dispatch:
   push:
     tags: ['v*']
 
@@ -40,6 +41,8 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_VERSION: ${{ github.ref_name }}
         run: |
-          $assets = Get-ChildItem -LiteralPath ./artifacts/releases -Filter '*.zip' -File | ForEach-Object { "./artifacts/releases/$($_.Name)" }
-          gh release create $env:RELEASE_VERSION @assets --verify-tag --draft --generate-notes --title "随引 $env:RELEASE_VERSION"
+          $assets = @(Get-ChildItem -LiteralPath ./artifacts/releases -Filter '*.zip' -File)
+          if ($assets.Count -ne 1) { throw "Expected exactly one release ZIP; found $($assets.Count)." }
+          $assetPath = $assets[0].FullName
+          gh release create $env:RELEASE_VERSION $assetPath --verify-tag --draft --generate-notes --title "随引 $env:RELEASE_VERSION"
           if ($LASTEXITCODE -ne 0) { throw 'Creating the release draft failed.' }
