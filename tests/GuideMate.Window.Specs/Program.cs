@@ -101,12 +101,79 @@ internal static class Program
             var browser = Field<Microsoft.Web.WebView2.Wpf.WebView2CompositionControl>(window, "_browser");
             Check(Math.Abs(browser.ActualWidth / browser.ActualHeight - 16d / 9) < 0.01,
                 "rendered immersive video surface has no extra letterbox from window ratio");
+            Pump(600);
+            var rendered = browser.PointToScreen(new(browser.ActualWidth, browser.ActualHeight));
+            Check(Math.Abs(rendered.X - after.Left - after.Width) <= 2 && Math.Abs(rendered.Y - after.Top - after.Height) <= 2,
+                "video composition surface grows to fill actual native window");
             Capture(window, Path.Combine(output, "aspect-resize.png"));
             Check(nativeSizeLoop == 0 && window.ResizeMode == ResizeMode.NoResize,
                 "custom resize never enters native sizing/moving loop used by Snap");
             var canceled = Bounds(window); Pump(80);
             Check(Bounds(window) == canceled && Field<Thumb?>(window, "_resizeGrip") == null,
                 "canceled resize drops pending moves");
+            var names = new Dictionary<string, ResizeEdges> { ["左边"] = ResizeEdges.Left, ["右边"] = ResizeEdges.Right,
+                ["上边"] = ResizeEdges.Top, ["下边"] = ResizeEdges.Bottom,
+                ["左上角"] = ResizeEdges.Left | ResizeEdges.Top, ["右上角"] = ResizeEdges.Right | ResizeEdges.Top,
+                ["左下角"] = ResizeEdges.Left | ResizeEdges.Bottom, ["右下角"] = ResizeEdges.Right | ResizeEdges.Bottom };
+            var grips = Descendants(window).OfType<Thumb>().Where(grip =>
+                System.Windows.Automation.AutomationProperties.GetName(grip).StartsWith("窗口缩放：")).ToArray();
+            Check(grips.Length == 8, "all four edges and corners expose independent resize controls");
+            foreach (var immersive in new[] { true, false })
+            {
+                if (!immersive) { Invoke(window, "ToggleImmersive"); Pump(100); }
+                foreach (var pair in names)
+                {
+                    var grip = grips.Single(item => System.Windows.Automation.AutomationProperties.GetName(item) == "窗口缩放：" + pair.Key);
+                    var center = grip.TranslatePoint(new(grip.ActualWidth / 2, grip.ActualHeight / 2), window);
+                    Check(window.InputHitTest(center) is DependencyObject hit && IsInside(hit, grip),
+                        $"WPF receives input at {pair.Key}, immersive={immersive}");
+                    var screen = window.PointToScreen(center);
+                    Check(SendMessage(new WindowInteropHelper(window).Handle, 0x0084, 0, Pack(screen)) == 1,
+                        $"native hit-test delegates {pair.Key} to custom control, immersive={immersive}");
+                    var origin = Bounds(window);
+                    Invoke(window, "BeginWindowResize", grip, pair.Value);
+                    var originMouse = Field<Point>(window, "_resizeOriginMouse");
+                    Invoke(window, "ResizeWindowAt", new Point(originMouse.X + 55, originMouse.Y + 35));
+                    Invoke(window, "CancelWindowResize"); Pump(25);
+                    var resized = Bounds(window);
+                    Check(resized != origin && ((pair.Value & ResizeEdges.Left) == 0 || Math.Abs(resized.Left + resized.Width - origin.Left - origin.Width) <= 2)
+                        && ((pair.Value & ResizeEdges.Top) == 0 || Math.Abs(resized.Top + resized.Height - origin.Top - origin.Height) <= 2),
+                        $"desktop resize applies {pair.Key} while keeping opposite anchors, immersive={immersive}");
+                    Check(!immersive || Math.Abs(resized.Width - resized.Height * 16 / 9) <= 2,
+                        $"desktop resize keeps video ratio at {pair.Key}, immersive={immersive}");
+                }
+            }
+            var handle = new WindowInteropHelper(window).Handle;
+            var monitor = System.Windows.Forms.Screen.FromHandle(handle).WorkingArea;
+            window.Left = monitor.Right / source.CompositionTarget.TransformToDevice.M11 - window.Width / 2;
+            window.Top = monitor.Bottom / source.CompositionTarget.TransformToDevice.M22 - window.Height / 2;
+            Pump(50);
+            var offscreen = Bounds(window);
+            Check(offscreen.Left + offscreen.Width > monitor.Right && offscreen.Top + offscreen.Height > monitor.Bottom,
+                "normal window lower-right corner can be outside work area");
+            var upperLeft = grips.Single(grip => System.Windows.Automation.AutomationProperties.GetName(grip) == "窗口缩放：左上角");
+            Invoke(window, "BeginWindowResize", upperLeft, ResizeEdges.Left | ResizeEdges.Top);
+            var offscreenMouse = Field<Point>(window, "_resizeOriginMouse");
+            Invoke(window, "ResizeWindowAt", new Point(offscreenMouse.X + 60, offscreenMouse.Y + 40));
+            Invoke(window, "CancelWindowResize"); Pump(50);
+            Check(Bounds(window).Width < offscreen.Width && Bounds(window).Height < offscreen.Height,
+                "visible upper-left control resizes window when lower-right is beyond screen and taskbar");
+            Invoke(window, "BeginWindowResize", upperLeft, ResizeEdges.Left | ResizeEdges.Top);
+            window.WindowState = WindowState.Maximized; Pump(50);
+            Check(grips.All(grip => grip.Visibility == Visibility.Collapsed) && Field<Thumb?>(window, "_resizeGrip") == null,
+                "maximize cancels resize and hides all grips");
+            window.WindowState = WindowState.Normal; Pump(50);
+            Check(grips.All(grip => grip.Visibility == Visibility.Visible), "restoring normal state re-enables all grips");
+            window.Left = 120; window.Top = 80;
+            Invoke(window, "ToggleImmersive"); Pump(80);
+            Invoke(window, "BeginWindowResize", upperLeft, ResizeEdges.Left | ResizeEdges.Top);
+            Invoke(window, "HideToTray"); Pump(50); Invoke(window, "RestoreMainWindow"); Pump(50);
+            Check(Field<Thumb?>(window, "_resizeGrip") == null, "hide and restore never resume canceled resizing");
+            var progress = Field<Grid>(window, "_edgeProgress");
+            var progressPoint = progress.TranslatePoint(new(progress.ActualWidth / 2, progress.ActualHeight - 2), window);
+            Check(window.InputHitTest(progressPoint) is DependencyObject progressHit && IsInside(progressHit, progress),
+                "bottom progress line retains input above resize edge");
+            Check(nativeSizeLoop == 0, "all custom edges avoid native Snap sizing loop");
             source.RemoveHook(Observe);
             window.Width = 800; window.Height = 450; Pump(50);
             var settingsType = typeof(MainWindow).Assembly.GetType("GuideMate.App.SettingsWindow")!;
@@ -180,6 +247,15 @@ internal static class Program
             foreach (var item in Descendants(VisualTreeHelper.GetChild(root, i))) yield return item;
     }
     internal static IEnumerable<TextBlock> Texts(DependencyObject root) => Descendants(root).OfType<TextBlock>();
+    private static bool IsInside(DependencyObject element, DependencyObject ancestor)
+    {
+        for (DependencyObject? node = element; node != null; node = VisualTreeHelper.GetParent(node))
+            if (node == ancestor) return true;
+        return false;
+    }
+    private static nint Pack(Point point) => (nint)(((long)(ushort)(short)Math.Round(point.Y) << 16) | (ushort)(short)Math.Round(point.X));
+    [DllImport("user32.dll")]
+    private static extern nint SendMessage(nint window, int message, nint wParam, nint lParam);
     [StructLayout(LayoutKind.Sequential)]
     private struct NativeRect { public int Left, Top, Right, Bottom; }
     [DllImport("user32.dll")]

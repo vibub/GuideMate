@@ -7,14 +7,14 @@ public sealed partial class MainWindow
 {
     // WebView2CompositionControl exposes OpacityMask read-only; mask its WPF video layer instead.
     private readonly Grid _videoSurface = new();
-    private readonly Grid _edgeProgress = new() { Height = 14, VerticalAlignment = VerticalAlignment.Bottom,
+    private readonly Grid _edgeProgress = new() { Height = 14, VerticalAlignment = VerticalAlignment.Bottom, Margin = new(18, 0, 18, 6),
         Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0)), Cursor = Cursors.Hand, Visibility = Visibility.Collapsed };
     private readonly Border _edgeTrack = new() { Height = 3, VerticalAlignment = VerticalAlignment.Bottom,
         Background = new SolidColorBrush(Color.FromArgb(200, 28, 32, 34)), IsHitTestVisible = false };
     private readonly Border _edgePlayed = new() { Height = 3, VerticalAlignment = VerticalAlignment.Bottom,
         HorizontalAlignment = HorizontalAlignment.Left, Background = new SolidColorBrush(Color.FromRgb(56, 218, 179)), IsHitTestVisible = false };
     private readonly TextBlock _edgeTime = new() { HorizontalAlignment = HorizontalAlignment.Right,
-        VerticalAlignment = VerticalAlignment.Bottom, Margin = new(0, 0, 8, 18), Padding = new(6, 3, 6, 3),
+        VerticalAlignment = VerticalAlignment.Bottom, Margin = new(0, 0, 18, 24), Padding = new(6, 3, 6, 3),
         FontSize = 11, Foreground = Brushes.White, Background = new SolidColorBrush(Color.FromArgb(210, 28, 32, 34)),
         IsHitTestVisible = false, Visibility = Visibility.Collapsed };
     private readonly DispatcherTimer _xrayTimer = new(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(16.7) };
