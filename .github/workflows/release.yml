@@ -2,6 +2,11 @@ name: Release draft
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag whose source should be packaged
+        required: true
+        type: string
   push:
     tags: ['v*']
 
@@ -21,6 +26,7 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref }}
       - uses: actions/setup-dotnet@v6.0.0
         with:
           dotnet-version: 10.0.x
@@ -33,13 +39,13 @@ jobs:
         run: ./scripts/Test-GuideMate.ps1
       - name: Package Windows application
         env:
-          RELEASE_VERSION: ${{ github.ref_name }}
+          RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
         run: ./scripts/Package-GuideMate.ps1 -Version $env:RELEASE_VERSION
       - name: Create draft with ZIP
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_VERSION: ${{ github.ref_name }}
+          RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
         run: |
           $assets = @(Get-ChildItem -LiteralPath ./artifacts/releases -Filter '*.zip' -File)
           if ($assets.Count -ne 1) { throw "Expected exactly one release ZIP; found $($assets.Count)." }
