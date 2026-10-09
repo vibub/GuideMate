@@ -19,6 +19,11 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        if (args.Length is 2 or 4 && args[0] == "--vision-calibration")
+        {
+            VisionCalibrationSpecs.Run(args[1], args.Length == 4 ? args[2] : null, args.Length == 4 ? args[3] : null);
+            return;
+        }
         if (args.Length == 2 && args[0] == "--browser-cache")
         {
             BrowserCacheSpecs.Run(args[1]);

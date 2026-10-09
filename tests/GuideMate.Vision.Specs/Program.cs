@@ -56,8 +56,10 @@ if (robustnessFlag >= 0)
 var overlapFlag = Array.IndexOf(args, "--overlap-review");
 if (overlapFlag >= 0) checks += ArrowRobustnessChecks.ReviewOverlaps(args[overlapFlag + 1]);
 checks += EndfieldChecks.Run(args);
+checks += GameDetectionChecks.Run();
 var ffmpeg = VideoAnalysis.FindFfmpeg();
 Check(ffmpeg != null, "existing ffmpeg is located without installing an SDK");
+checks += await GameDetectionChecks.CheckVideosAsync(args, ffmpeg!);
 checks += await EndfieldChecks.AnalyzeVideoAsync(args, ffmpeg!);
 var framesFlag = Array.IndexOf(args, "--frames");
 if (framesFlag >= 0)

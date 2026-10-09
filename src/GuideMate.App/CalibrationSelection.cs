@@ -124,7 +124,8 @@ internal sealed partial class VisionCalibrationWindow
         }
         _region = new(x / width, y / height, size / width, size / height);
         _preset.SelectedItem = "手动选区";
-        DrawRegion(); PreviewAngle = null; _result.Text = "正在调整选区，松开鼠标更新识别结果";
+        DrawRegion(); PreviewAngle = null; _analyze.IsEnabled = false;
+        _result.Text = "正在调整选区，松开鼠标更新识别结果";
     }
 
     private void EndSelectionDrag(bool cancel)

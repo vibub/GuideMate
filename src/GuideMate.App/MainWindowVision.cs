@@ -24,7 +24,7 @@ public sealed partial class MainWindow
     {
         var panel = new StackPanel { Margin = new(16, 0, 16, 12) };
         panel.Children.Add(Ui.Heading("攻略画面方向"));
-        panel.Children.Add(Ui.Text("校准时选择原神或终末地，框选玩家箭头。", 12, Ui.Muted));
+        panel.Children.Add(Ui.Text("框选玩家箭头后自动识别原神或终末地，也可手动选择。", 12, Ui.Muted));
         panel.Children.Add(_visionSummary);
         panel.Children.Add(Ui.Command("\uE9D9", "校准并分析本地视频", OpenVisionAnalysis));
         panel.Children.Add(Ui.Command("\uE714", "校准在线视频", OpenOnlineCalibration));

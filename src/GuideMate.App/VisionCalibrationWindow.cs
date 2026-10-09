@@ -21,9 +21,13 @@ internal sealed partial class VisionCalibrationWindow : Window
     private readonly TextBlock _clock = Ui.Text("", 12, Ui.Muted);
     private readonly CheckBox _northLocked = Ui.Toggle("地图北向固定", true, _ => { });
     private readonly TextBox _northAngle = new() { Text = "0", Width = 64 };
-    private readonly ComboBox _game = new() { Width = 122, Margin = new(8, 0, 14, 0) };
-    private VisionGame Game => (VisionGame)Math.Max(0, _game.SelectedIndex);
+    private readonly ComboBox _game = new() { Width = 140, Margin = new(8, 0, 14, 0) };
+    private readonly TextBlock _gameResult = Ui.Text("框选完整的玩家箭头后自动识别游戏，也可手动选择。", 12, Ui.Muted);
+    private VisionGame? _detectedGame;
+    private VisionGame? Game => _game.SelectedIndex > 0 ? (VisionGame)(_game.SelectedIndex - 1) : _detectedGame;
     private readonly ComboBox _preset = new() { Width = 154 };
+    private VisionGame _presetGame;
+    private bool _updatingPresets;
     private readonly ProgressBar _progress = new() { Height = 5, Minimum = 0, Maximum = 100 };
     private readonly Button _analyze;
     private readonly Button _refresh;
@@ -38,7 +42,7 @@ internal sealed partial class VisionCalibrationWindow : Window
     public OnlineVisionProfile? OnlineResult { get; private set; }
     internal bool PreviewReady => _preview.Source != null && !_loading;
     internal double? PreviewAngle { get; private set; }
-    internal void SelectGame(VisionGame game) => _game.SelectedIndex = (int)game;
+    internal void SelectGame(VisionGame game) => _game.SelectedIndex = (int)game + 1;
 
     public VisionCalibrationWindow(Window owner, string ffmpeg, string path, double startTime,
         OnlineVideoFrame? onlineFrame = null, OnlineVisionProfile? onlineProfile = null, VisionGame game = VisionGame.Genshin)
@@ -65,8 +69,8 @@ internal sealed partial class VisionCalibrationWindow : Window
         _time.ValueChanged += (_, _) => _clock.Text = TimeSpan.FromSeconds(_time.Value).ToString(@"mm\:ss");
         var controls = new WrapPanel { Margin = new(0, 10, 0, 4) };
         controls.Children.Add(Ui.Text("游戏", 12));
-        _game.Items.Add("原神"); _game.Items.Add("终末地"); controls.Children.Add(_game);
-        _game.ToolTip = "选择当前攻略的游戏，保存校准后生效";
+        _game.Items.Add("自动识别"); _game.Items.Add("原神"); _game.Items.Add("终末地"); controls.Children.Add(_game);
+        _game.ToolTip = "自动识别原神或终末地；手动选择后不再自动更改，保存校准后生效";
         controls.Children.Add(Ui.Text("箭头区域", 12)); _preset.Margin = new(8, 0, 14, 0);
         _preset.ToolTip = "在画面中拖动框选玩家箭头，选区需保留四周边距";
         controls.Children.Add(_preset); controls.Children.Add(_northLocked);
@@ -75,21 +79,22 @@ internal sealed partial class VisionCalibrationWindow : Window
         _coordinates.Margin = new(12, 0, 0, 0); controls.Children.Add(_coordinates);
         Grid.SetRow(controls, 3); root.Children.Add(controls);
         _preset.SelectionChanged += (_, _) =>
-        { if (_preset.SelectedItem as string != "手动选区") { EndSelectionDrag(true); ApplyPreset(); } };
+        { if (!_updatingPresets && _preset.SelectedItem as string != "手动选区") { EndSelectionDrag(true); ApplyPreset(); } };
+        UpdateGamePresets(onlineProfile?.Game ?? game);
         _game.SelectionChanged += (_, _) =>
         {
-            var manual = _preset.SelectedItem as string == "手动选区";
-            _preset.Items.Clear();
-            foreach (var label in Game == VisionGame.Endfield
-                ? new[] { "月月放大小地图", "手动选区" }
-                : new[] { "作者放大小地图", "原始游戏小地图", "手动选区" }) _preset.Items.Add(label);
-            _preset.SelectedItem = manual ? "手动选区" : (string)_preset.Items[0];
+            _detectedGame = null;
+            if (Game is { } selected) UpdateGamePresets(selected);
+            _gameResult.Text = Game is { } manual ? $"已手动选择：{GameLabel(manual)} · 选择“自动识别”可重新判断"
+                : "框选完整的玩家箭头后自动识别游戏，也可手动选择。";
             DetectPreview();
         };
-        _game.SelectedIndex = (int)(onlineProfile?.Game ?? game);
+        _game.SelectedIndex = 0;
         _northLocked.Checked += (_, _) => DetectPreview(); _northLocked.Unchecked += (_, _) => DetectPreview();
         _northAngle.LostFocus += (_, _) => DetectPreview();
-        _result.Margin = new(0, 8, 0, 8); Grid.SetRow(_result, 4); root.Children.Add(_result);
+        var results = new StackPanel { Margin = new(0, 8, 0, 8) };
+        results.Children.Add(_gameResult); results.Children.Add(_result);
+        Grid.SetRow(results, 4); root.Children.Add(results);
         var footer = new Grid { Margin = new(0, 4, 0, 0) }; footer.ColumnDefinitions.Add(new()); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         _progress.VerticalAlignment = VerticalAlignment.Center; _progress.Margin = new(0, 0, 16, 0); footer.Children.Add(_progress);
         _analyze = Ui.Command("\uE768", onlineFrame == null ? "分析完整视频" : "保存并启用", () => _ = AnalyzeAsync()); _analyze.IsEnabled = false;
@@ -116,13 +121,29 @@ internal sealed partial class VisionCalibrationWindow : Window
                 else ApplyPreset();
                 DrawRegion();
                 if (onlineFrame == null) await RefreshAsync();
-                else { SetPreview(onlineFrame.Image); DetectPreview(); _analyze.IsEnabled = true; }
+                else { SetPreview(onlineFrame.Image); DetectPreview(); }
             }
             catch (OperationCanceledException) { }
             catch (Exception ex) { if (!_closed) _result.Text = "读取失败：" + ex.Message; }
         };
         Deactivated += (_, _) => EndSelectionDrag(true);
         Closed += (_, _) => { EndSelectionDrag(true); _closed = true; _lifetime.Cancel(); _analysis?.Cancel(); _frame?.Dispose(); _lifetime.Dispose(); };
+    }
+
+    private static string GameLabel(VisionGame game) => game == VisionGame.Endfield ? "终末地" : "原神";
+
+    private void UpdateGamePresets(VisionGame game)
+    {
+        if (_preset.Items.Count > 0 && _presetGame == game) return;
+        _updatingPresets = true;
+        _presetGame = game;
+        _preset.Items.Clear();
+        foreach (var label in game == VisionGame.Endfield
+            ? new[] { "月月放大小地图", "手动选区" }
+            : new[] { "作者放大小地图", "原始游戏小地图", "手动选区" }) _preset.Items.Add(label);
+        // Rebuilding game-specific presets must not move the user's calibration box.
+        _preset.SelectedItem = _info != null ? "手动选区" : (string)_preset.Items[0];
+        _updatingPresets = false;
     }
 
     private void ApplyPreset()
@@ -155,7 +176,7 @@ internal sealed partial class VisionCalibrationWindow : Window
             var bytes = await VideoAnalysis.PreviewAsync(_ffmpeg, _path, _time.Value, _lifetime.Token);
             if (_closed) return;
             SetPreview(bytes);
-            DetectPreview(); _analyze.IsEnabled = true;
+            DetectPreview();
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) { if (!_closed) _result.Text = "预览失败：" + ex.Message; }
@@ -173,12 +194,30 @@ internal sealed partial class VisionCalibrationWindow : Window
     private void DetectPreview()
     {
         if (_frame == null || _info == null || _busy || _closed) return;
-        if (!double.TryParse(_northAngle.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var north) || !double.IsFinite(north)) { _result.Text = "北向角度无效"; return; }
+        PreviewAngle = null; _analyze.IsEnabled = false;
+        var automatic = _game.SelectedIndex == 0;
+        if (automatic)
+        {
+            _detectedGame = null;
+            _gameResult.Text = "自动识别：未能确定，请框选清晰完整的玩家箭头，或手动选择游戏";
+        }
         if (Math.Min(_region.Width * _frame.Width, _region.Height * _frame.Height) < 8)
         { PreviewAngle = null; _result.Text = "预览中的选区过小，请扩大选区"; return; }
         using var crop = new Cv.Mat(_frame, VideoAnalysis.PixelRegion(_region, new VideoInfo(_frame.Width, _frame.Height, 1)));
         using var scaled = new Cv.Mat(); Cv.Cv2.Resize(crop, scaled, new(160, 160));
-        var detected = ArrowDetector.Detect(scaled, lowResolution: _onlineFrame != null && _onlineFrame.DetailPixels * _region.Width < 60, game: Game);
+        var lowResolution = _onlineFrame != null && _onlineFrame.DetailPixels * _region.Width < 60;
+        ArrowDetection? detected;
+        if (automatic)
+        {
+            var match = VisionGameDetector.Detect(scaled, lowResolution);
+            if (match == null) { _result.Text = "当前帧：未识别到唯一的玩家箭头"; return; }
+            _detectedGame = match.Game; detected = match.Arrow;
+            UpdateGamePresets(match.Game);
+            _gameResult.Text = $"自动识别：{GameLabel(match.Game)} · 可在“游戏”中手动更改";
+        }
+        else detected = ArrowDetector.Detect(scaled, lowResolution, Game!.Value);
+        if (!double.TryParse(_northAngle.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var north) || !double.IsFinite(north)) { _result.Text = "北向角度无效"; return; }
+        _analyze.IsEnabled = true;
         PreviewAngle = detected?.Angle;
         if (detected == null) { _result.Text = "当前帧：未识别到玩家箭头"; return; }
         var angle = VisualDirectionTrack.Normalize(detected.Angle - (_northLocked.IsChecked == true ? north : 0));
@@ -188,10 +227,11 @@ internal sealed partial class VisionCalibrationWindow : Window
     private async Task AnalyzeAsync()
     {
         if (_info == null || _busy) return;
+        if (Game is not { } game) { _result.Text = "尚未确定游戏，请手动选择原神或终末地后再保存"; return; }
         if (!double.TryParse(_northAngle.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var north) || !double.IsFinite(north)) { _result.Text = "北向角度无效"; return; }
         if (_onlineFrame != null)
         {
-            OnlineResult = new(_onlineFrame.Width, _onlineFrame.Height, _region, _northLocked.IsChecked == true, north, Game);
+            OnlineResult = new(_onlineFrame.Width, _onlineFrame.Height, _region, _northLocked.IsChecked == true, north, game);
             DialogResult = true; return;
         }
         _busy = true; _analyze.IsEnabled = _refresh.IsEnabled = _game.IsEnabled = _preset.IsEnabled = _northAngle.IsEnabled = _northLocked.IsEnabled = _time.IsEnabled = false;
@@ -204,7 +244,7 @@ internal sealed partial class VisionCalibrationWindow : Window
         });
         try
         {
-            var region = _region; var locked = _northLocked.IsChecked == true; var game = Game;
+            var region = _region; var locked = _northLocked.IsChecked == true;
             Result = await Task.Run(() => VideoAnalysis.AnalyzeAsync(_ffmpeg, _path, _info, region, locked, north, progress, _analysis.Token, game));
             if (!_closed) { DialogResult = true; }
         }
@@ -214,6 +254,7 @@ internal sealed partial class VisionCalibrationWindow : Window
         {
             _analysis.Dispose(); _analysis = null; _busy = false;
             if (!_closed) _analyze.IsEnabled = _refresh.IsEnabled = _game.IsEnabled = _preset.IsEnabled = _northAngle.IsEnabled = _northLocked.IsEnabled = _time.IsEnabled = true;
+            if (!_closed) DetectPreview();
         }
     }
 }
