@@ -29,6 +29,10 @@ internal static class Program
         store.Save(initial);
         var app = new GuideMate.App.App { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         app.InitializeComponent();
+        // Load production resources without dispatching its normal-profile startup handler.
+        app.Startup -= (StartupEventHandler)Delegate.CreateDelegate(typeof(StartupEventHandler), app,
+            typeof(GuideMate.App.App).GetMethod("OnStartup", Private, null, [typeof(object), typeof(StartupEventArgs)], null)!);
+        app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
         Wpf.Ui.Appearance.ApplicationAccentColorManager.Apply(System.Windows.Media.Color.FromRgb(19, 124, 102));
         MainWindow? window = null;
         try
@@ -111,6 +115,9 @@ internal static class Program
             var deadline = Environment.TickCount64 + 15000;
             while (Field<double>(result, "_duration") <= 0 && Environment.TickCount64 < deadline) Pump(40);
             Check(result.IsLoaded && Field<double>(result, "_duration") > 0, "isolated WPF and WebView2 local sample initialized");
+            Check(System.Windows.Application.Current.Windows.OfType<MainWindow>().Count() == 1
+                && System.Windows.Application.Current.Windows.OfType<MainWindow>().All(item => Field<bool>(item, "_isolated")),
+                "only the intended isolated main window is open");
             Invoke(result, "UpdateOverlay"); Pump(50);
             return result;
         }
