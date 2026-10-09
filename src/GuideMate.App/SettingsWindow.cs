@@ -46,7 +46,7 @@ internal sealed class SettingsWindow : Window
         System.Windows.Automation.AutomationProperties.SetName(danmaku, "B 站全屏弹幕");
         panel.Children.Add(danmaku);
         panel.Children.Add(Ui.Text("进入沉浸后铺满小窗所在屏幕，鼠标操作穿透。沿用 B 站弹幕开关与屏蔽结果。", 12, Ui.Muted));
-        Slider DanmakuSlider(string name, double min, double max, double value, double tick, Func<double, string> format)
+        Slider SettingsSlider(string name, double min, double max, double value, double tick, Func<double, string> format)
         {
             var label = Ui.Text(name + "  " + format(value), 12);
             label.Margin = new(0, 10, 0, 0); panel.Children.Add(label);
@@ -57,12 +57,16 @@ internal sealed class SettingsWindow : Window
             panel.Children.Add(slider);
             return slider;
         }
-        var danmakuArea = DanmakuSlider("显示区域", 0.1, 1, settings.DanmakuDisplayArea, 0.1, value => $"{value:P0}");
+        var danmakuArea = SettingsSlider("显示区域", 0.1, 1, settings.DanmakuDisplayArea, 0.1, value => $"{value:P0}");
         panel.Children.Add(Ui.Text("从屏幕顶部向下分配弹幕区域，底部固定弹幕也在此范围内。", 12, Ui.Muted));
-        var danmakuOpacity = DanmakuSlider("不透明度", 0, 1, settings.DanmakuOpacity, 0.05, value => $"{value:P0}");
-        var danmakuFont = DanmakuSlider("弹幕字号", 0.5, 2, settings.DanmakuFontScale, 0.1, value => $"{value:P0}");
-        var danmakuSpeed = DanmakuSlider("弹幕速度", 0.5, 2, settings.DanmakuSpeed, 0.25,
+        var danmakuOpacity = SettingsSlider("不透明度", 0, 1, settings.DanmakuOpacity, 0.05, value => $"{value:P0}");
+        var danmakuFont = SettingsSlider("弹幕字号", 0.5, 2, settings.DanmakuFontScale, 0.1, value => $"{value:P0}");
+        var danmakuSpeed = SettingsSlider("弹幕速度", 0.5, 2, settings.DanmakuSpeed, 0.25,
             value => value == 1 ? "适中（1x）" : $"{value:0.##}x");
+        panel = Section("字幕与方向", "字幕");
+        panel.Children.Add(Ui.Text("调整字幕与方向浮窗的文字大小，保存后生效。", 12, Ui.Muted));
+        var subtitleFont = SettingsSlider("字幕字号", 12, 48, settings.SubtitleFontSize, 1, value => $"{value:0}");
+        var directionFont = SettingsSlider("方向指引字号", 12, 48, settings.DirectionFontSize, 1, value => $"{value:0}");
         panel = Section("沉浸小窗", "小窗");
         var hideFromAltTab = Ui.Toggle("在 Alt+Tab 中隐藏沉浸小窗", settings.HideImmersiveFromAltTab, _ => { });
         System.Windows.Automation.AutomationProperties.SetName(hideFromAltTab, "在 Alt+Tab 中隐藏沉浸小窗");
@@ -114,6 +118,9 @@ internal sealed class SettingsWindow : Window
             settings.DanmakuFontScale = danmakuFont.Value;
             settings.DanmakuSpeed = danmakuSpeed.Value;
             owner.ApplyDanmakuSettings();
+            settings.SubtitleFontSize = subtitleFont.Value;
+            settings.DirectionFontSize = directionFont.Value;
+            owner.ApplySubtitleSettings();
             settings.HideImmersiveFromAltTab = hideFromAltTab.IsChecked == true;
             settings.ImmersiveOpacity = 1 - opacity.Value;
             settings.XRayEnabled = xray.IsChecked == true;

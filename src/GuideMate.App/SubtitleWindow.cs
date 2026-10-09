@@ -63,6 +63,11 @@ internal sealed class SubtitleWindow : Window
         MouseLeftButtonDown += (_, e) => { if (e.ClickCount == 1) DragMove(); };
         Update("", null);
     }
+    public void ApplyFontSizes(AppSettings settings)
+    {
+        _subtitle.FontSize = settings.SubtitleFontSize;
+        _direction.FontSize = settings.DirectionFontSize;
+    }
     private string? _lastText;
     private DirectionHint? _lastHint;
     public void Update(string text, DirectionHint? hint)

@@ -170,6 +170,26 @@ Check(oldAppearance.ImmersiveOpacity == null && oldAppearance.GetImmersiveOpacit
 Check(oldAppearance.DanmakuDisplayArea == 1 && oldAppearance.DanmakuOpacity == 1
     && oldAppearance.DanmakuFontScale == 1 && oldAppearance.DanmakuSpeed == 1
     && oldAppearance.Hotkeys["Hide"] == "Ctrl+Shift+H", "legacy JSON without danmaku fields retains appearance and custom binding");
+Check(oldAppearance.SubtitleFontSize == 16 && oldAppearance.DirectionFontSize == 21,
+    "legacy settings retain the existing subtitle and direction font sizes");
+oldAppearance.SubtitleFontSize = 28; oldAppearance.DirectionFontSize = 36;
+oldAppearance.OverlayWidth = 630; oldAppearance.OverlayLeft = 321; oldAppearance.OverlayTop = 654;
+oldAppearance.Bookmarks = [new() { Url = "https://example.com/font-check", Position = 42 }];
+var fontStore = new SettingsStore(oldDir); fontStore.Save(oldAppearance);
+var fontReload = fontStore.Load();
+Check(fontReload.SubtitleFontSize == 28 && fontReload.DirectionFontSize == 36,
+    "independent subtitle and direction font sizes survive settings reload");
+Check(fontReload.OverlayWidth == 630 && fontReload.OverlayLeft == 321 && fontReload.OverlayTop == 654
+    && fontReload.Hotkeys["Hide"] == "Ctrl+Shift+H" && fontReload.Opacity == 0.6
+    && fontReload.Bookmarks[0].Position == 42, "font changes preserve overlay geometry, custom hotkeys and video data");
+File.WriteAllText(Path.Combine(oldDir, "settings.json"), "{\"SubtitleFontSize\":0,\"DirectionFontSize\":100}");
+var fontBounds = fontStore.Load();
+Check(fontBounds.SubtitleFontSize == 12 && fontBounds.DirectionFontSize == 48,
+    "font size bounds normalize when reading external settings");
+File.WriteAllText(Path.Combine(oldDir, "settings.json"), "{\"SubtitleFontSize\":100,\"DirectionFontSize\":0}");
+fontBounds = fontStore.Load();
+Check(fontBounds.SubtitleFontSize == 48 && fontBounds.DirectionFontSize == 12,
+    "font size bounds apply independently to both settings");
 File.WriteAllText(Path.Combine(oldDir, "settings.json"), "{\"Hotkeys\":{\"PlayPause\":\"Ctrl+Alt+Shift+V\"}}");
 var collision = new SettingsStore(oldDir).Load();
 Check(collision.Hotkeys["PlayPause"] == "Ctrl+Alt+Shift+V" && collision.Hotkeys["TemporaryRate"] != "Ctrl+Alt+Shift+V",

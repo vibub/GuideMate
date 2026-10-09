@@ -24,6 +24,8 @@ public class AppSettings
     public double OverlayLeft { get; set; } = 140;
     public double OverlayTop { get; set; } = 860;
     public double OverlayWidth { get; set; } = 520;
+    public double SubtitleFontSize { get; set; } = 16;
+    public double DirectionFontSize { get; set; } = 21;
     public bool Topmost { get; set; } = true;
     public WindowTopmostMode? TopmostMode { get; set; }
     public double Opacity { get; set; } = 1;

@@ -675,12 +675,15 @@ public sealed partial class MainWindow : Window
             new RectangleGeometry(new Rect(0, 0, width, height)),
             new RectangleGeometry(new Rect((width - holeWidth) / 2, (height - holeHeight) / 2, holeWidth, holeHeight)));
     }
+    internal void ApplySubtitleSettings() => _overlay?.ApplyFontSizes(_settings);
+
     private void UpdateOverlay()
     {
         if (!_settings.SubtitleOverlay || !IsVisible || WindowState == WindowState.Minimized) { _overlay?.Hide(); return; }
         if (_overlay == null)
         {
             _overlay = new() { Left = _settings.OverlayLeft, Top = _settings.OverlayTop, Width = Math.Clamp(_settings.OverlayWidth, 260, 1000) };
+            ApplySubtitleSettings();
             _overlay.Show(); Ui.PlaceVisible(_overlay);
             _overlay.Closed += (_, _) => { _overlay = null; if (!_closing) { _settings.SubtitleOverlay = false; _overlayToggle.IsChecked = false; } };
         }
