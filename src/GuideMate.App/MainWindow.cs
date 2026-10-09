@@ -77,7 +77,7 @@ public sealed partial class MainWindow : Window
         Title = "随引"; Width = Math.Clamp(_settings.Width, 860, 1800); Height = Math.Clamp(_settings.Height, 500, 1200);
         Left = _settings.Left; Top = _settings.Top; MinWidth = 860; MinHeight = 500;
         WindowStyle = WindowStyle.None; AllowsTransparency = true; Background = Brushes.Transparent;
-        ResizeMode = ResizeMode.CanResizeWithGrip; Topmost = _settings.ShouldBeTopmost(_immersive); Opacity = _settings.Opacity;
+        ResizeMode = ResizeMode.CanResize; Topmost = _settings.ShouldBeTopmost(_immersive); Opacity = _settings.Opacity;
         BuildUi();
         SourceInitialized += (_, _) =>
         {
@@ -105,7 +105,7 @@ public sealed partial class MainWindow : Window
         _fadeTimer.Tick += (_, _) => { _fadeTimer.Stop(); _faded = false; ApplyWindowOpacity(); };
         Closing += (_, _) =>
         {
-            CancelImmersiveDrag();
+            CancelWindowResize(); CancelImmersiveDrag();
             CancelEdgeSeek(); StopXRayTracking();
             _closing = true; UpdateImmersiveControls(); _onlineVisionTimer.Stop(); InvalidateOnlineSample(); _saveTimer.Stop(); _fadeTimer.Stop(); UpdateHistory(); SaveSettings();
             _chromeServer?.Dispose();
@@ -243,6 +243,7 @@ public sealed partial class MainWindow : Window
         var bottom = new Grid { Margin = new(14, 0, 14, 0) };
         bottom.Children.Add(_status); Grid.SetRow(bottom, 4); _root.Children.Add(bottom);
         _chrome.AddRange([title, navigation, playback, bottom]);
+        BuildWindowResizeControls();
         Content = _root;
         RefreshLibraries();
     }
@@ -601,13 +602,14 @@ public sealed partial class MainWindow : Window
     {
         if (enabled && _keys?.EmergencyAvailable != true) { _throughToggle.IsChecked = false; _status.Text = "紧急恢复热键不可用，无法启用穿透。"; return; }
         if (_through == enabled) return;
+        CancelWindowResize();
         _through = enabled; NativeHotkeys.ClickThrough(this, enabled);
         if (_overlay?.IsVisible == true) NativeHotkeys.ClickThrough(_overlay, enabled);
         _throughToggle.IsChecked = enabled;
     }
     private void ToggleImmersive()
     {
-        CancelImmersiveDrag();
+        CancelWindowResize(); CancelImmersiveDrag();
         CancelEdgeSeek(); StopXRayTracking();
         // Refresh the WPF composition surface after changing a layered window's layout.
         _browser.Visibility = Visibility.Hidden;
@@ -619,6 +621,7 @@ public sealed partial class MainWindow : Window
         }
         WindowState = WindowState.Normal;
         _immersive = !_immersive;
+        ResizeMode = _immersive ? ResizeMode.NoResize : ResizeMode.CanResize;
         _root.Background = _immersive ? Brushes.Transparent : Ui.Canvas;
         _edgeProgress.Visibility = _immersive ? Visibility.Visible : Visibility.Collapsed;
         ApplyWindowOpacity();

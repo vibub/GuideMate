@@ -118,7 +118,7 @@ public sealed partial class MainWindow
     private void UpdateXRayPointer(Point? pointer)
     {
         if (!_immersive || !_settings.XRayEnabled || !IsVisible || WindowState == WindowState.Minimized
-            || _dragHandle.IsDragging || _edgeSeeking || pointer is not { } point
+            || _dragHandle.IsDragging || _resizeGrip != null || _edgeSeeking || pointer is not { } point
             || !new Rect(5, 5, Math.Max(0, _browser.ActualWidth - 10), Math.Max(0, _browser.ActualHeight - 19)).Contains(point))
         { _videoSurface.OpacityMask = null; return; }
         var grip = new Rect(_dragHandle.TranslatePoint(new Point(), _browser), _dragHandle.RenderSize);

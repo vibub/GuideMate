@@ -1,6 +1,10 @@
 using Button = System.Windows.Controls.Button;
 using System.IO;
 using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Windows.Interop;
+using System.Windows.Controls.Primitives;
+using Point = System.Windows.Point;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -73,6 +77,31 @@ internal static class Program
             Check(Near(overlay.Width, 780) && Near(overlay.Left, 240) && Near(overlay.Top, 140),
                 "new subtitle window restores saved width and position");
             Check(store.Load().Bookmarks[0].Position == 42, "window saving preserves video library");
+            var sizeGrip = Descendants(window).OfType<Thumb>().Single(grip =>
+                System.Windows.Automation.AutomationProperties.GetName(grip) == "窗口缩放：右下角");
+            var source = HwndSource.FromHwnd(new WindowInteropHelper(window).Handle);
+            var nativeSizeLoop = 0;
+            nint Observe(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
+            {
+                if (message == 0x0231 || message == 0x0112 && (wParam.ToInt64() & 0xFFF0) is 0xF000 or 0xF010) nativeSizeLoop++;
+                return 0;
+            }
+            source.AddHook(Observe);
+            var before = Bounds(window);
+            Invoke(window, "BeginWindowResize", sizeGrip, ResizeEdges.Right | ResizeEdges.Bottom);
+            var pointer = Field<Point>(window, "_resizeOriginMouse");
+            Invoke(window, "ResizeWindowAt", new Point(pointer.X + 150, pointer.Y + 90));
+            Invoke(window, "CancelWindowResize"); Pump(50);
+            var after = Bounds(window);
+            Check(Math.Abs(after.Width - before.Width - 150) <= 2 && Math.Abs(after.Height - before.Height - 90) <= 2,
+                "custom corner resize updates actual desktop window in physical pixels");
+            Check(nativeSizeLoop == 0 && window.ResizeMode == ResizeMode.NoResize,
+                "custom resize never enters native sizing/moving loop used by Snap");
+            var canceled = Bounds(window); Pump(80);
+            Check(Bounds(window) == canceled && Field<Thumb?>(window, "_resizeGrip") == null,
+                "canceled resize drops pending moves");
+            source.RemoveHook(Observe);
+            window.Width = 800; window.Height = 450; Pump(50);
             var settingsType = typeof(MainWindow).Assembly.GetType("GuideMate.App.SettingsWindow")!;
             Window Settings() => (Window)Activator.CreateInstance(settingsType,
                 window, Field<AppSettings>(window, "_settings"), Field<object>(window, "_keys"),
@@ -144,6 +173,15 @@ internal static class Program
             foreach (var item in Descendants(VisualTreeHelper.GetChild(root, i))) yield return item;
     }
     internal static IEnumerable<TextBlock> Texts(DependencyObject root) => Descendants(root).OfType<TextBlock>();
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeRect { public int Left, Top, Right, Bottom; }
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(nint window, out NativeRect rect);
+    internal static WindowPlacement Bounds(Window window)
+    {
+        if (!GetWindowRect(new WindowInteropHelper(window).Handle, out var rect)) throw new InvalidOperationException("native bounds unavailable");
+        return new(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top);
+    }
     internal static void Capture(Window window, string path)
     {
         var point = window.PointToScreen(new());
