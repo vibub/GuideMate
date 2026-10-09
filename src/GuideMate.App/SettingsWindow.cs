@@ -19,6 +19,7 @@ internal sealed class SettingsWindow : Window
         }
         var panel = Section("全局热键", "热键");
         panel.Children.Add(Ui.Text("点击输入框录制快捷键，支持鼠标侧键及组合键。", 12, Ui.Muted));
+        panel.Children.Add(Ui.Text("原神或 BetterGI 以管理员权限运行时，鼠标侧键可能无法响应。请从托盘退出随引，再右键原启动入口选择“以管理员身份运行”，原热键与登录资料会继续沿用。", 12, Ui.Muted));
         var names = new Dictionary<string, string> { ["PlayPause"] = "播放 / 暂停", ["SeekBack"] = "后退", ["SeekForward"] = "快进", ["RateUp"] = "加快倍速", ["RateDown"] = "降低倍速", ["TemporaryRate"] = "长按临时倍速", ["PreviousEpisode"] = "上一集", ["NextEpisode"] = "下一集", ["Immersive"] = "沉浸模式", ["FullscreenDanmaku"] = "全屏弹幕开关", ["Hide"] = "隐藏 / 恢复", ["ClickThrough"] = "鼠标穿透" };
         var fields = new Dictionary<string, TextBox>();
         var error = Ui.Text("", 12, Brushes.Firebrick); error.Margin = new(0, 10, 0, 8);
