@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0-windows10.0.17763.0</TargetFramework><UseWPF>true</UseWPF><UseWindowsForms>true</UseWindowsForms><PlatformTarget>x64</PlatformTarget></PropertyGroup>
+  <ItemGroup><Resource Include="../../assets/branding/guidemate.ico" Link="Assets/guidemate.ico" /><ProjectReference Include="../../src/GuideMate.App/GuideMate.App.csproj" /></ItemGroup>
+</Project>

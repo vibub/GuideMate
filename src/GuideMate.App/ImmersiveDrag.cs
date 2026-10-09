@@ -50,7 +50,10 @@ public sealed partial class MainWindow
         _dragMovePump = null;
         pump.Dispose();
         if (!canceled && !_closing && _immersive && IsVisible && WindowState == WindowState.Normal)
+        {
             ApplyImmersiveDragPosition();
+            SaveSettings();
+        }
     }
 
     private void CancelImmersiveDrag()

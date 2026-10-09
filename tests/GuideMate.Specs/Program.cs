@@ -97,6 +97,17 @@ store.Save(new AppSettings { Topmost = true, TopmostMode = WindowTopmostMode.Nev
 Check(!store.Load().ShouldBeTopmost(true), "new never policy takes precedence over legacy checked value");
 store.Save(new AppSettings { Topmost = false, TopmostMode = (WindowTopmostMode)99 });
 Check(store.Load().GetTopmostMode() == WindowTopmostMode.Never, "unknown persisted policy falls back to legacy setting");
+loaded.ImmersiveBounds = new(-420, 260, 800, 450);
+loaded.OverlayLeft = -360; loaded.OverlayTop = 510; loaded.OverlayWidth = 1180;
+store.Save(loaded);
+var windowReload = store.Load();
+Check(windowReload.ImmersiveBounds == loaded.ImmersiveBounds && windowReload.OverlayLeft == -360
+    && windowReload.OverlayTop == 510 && windowReload.OverlayWidth == 1180, "immersive bounds and subtitle placement/width survive restart including negative monitor origins");
+Check(windowReload.Width == loaded.Width && windowReload.Height == loaded.Height && windowReload.Hotkeys["Hide"] == "Ctrl+Shift+H"
+    && windowReload.Bookmarks[0].Position == 12, "separate immersive geometry preserves normal bounds and existing user data");
+store.Save(new AppSettings { ImmersiveBounds = new(10, 20, 0, 360), OverlayWidth = 10 });
+var invalidBounds = store.Load();
+Check(invalidBounds.ImmersiveBounds == null && invalidBounds.OverlayWidth == 260, "invalid saved bounds are rejected without affecting legacy placement defaults");
 var calibration = new OnlineVisionProfile(1920, 1080, new(0.1, 0.2, 0.075, 0.13333333333333333), true, 13);
 loaded.OnlineVisionCalibration = calibration;
 loaded.OnlineVisionProfiles["https://example.com/old?p=1"] = calibration with { NorthAngle = 27 };

@@ -61,6 +61,7 @@ public sealed partial class MainWindow : Window
     private string? _localFile;
     private string? _pendingLocalFile;
     private Rect _normalBounds;
+    private WindowState _normalWindowState;
     private WindowState _restoreWindowState = WindowState.Normal;
     private SavedVideo? _resume;
     private bool _resumeApplied;
@@ -543,7 +544,8 @@ public sealed partial class MainWindow : Window
         var rect = _immersive ? _normalBounds : WindowState == WindowState.Normal
             ? new Rect(Left, Top, ActualWidth, ActualHeight) : RestoreBounds;
         _settings.Left = rect.Left; _settings.Top = rect.Top; _settings.Width = rect.Width; _settings.Height = rect.Height;
-        if (_overlay != null) { _settings.OverlayLeft = _overlay.Left; _settings.OverlayTop = _overlay.Top; _settings.OverlayWidth = _overlay.Width; }
+        if (_immersive) RememberImmersiveBounds();
+        if (_overlay != null) RememberOverlayBounds();
         try { _store.Save(_settings); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { _status.Text = "设置保存失败：" + ex.Message; }
     }
@@ -609,6 +611,13 @@ public sealed partial class MainWindow : Window
         CancelEdgeSeek(); StopXRayTracking();
         // Refresh the WPF composition surface after changing a layered window's layout.
         _browser.Visibility = Visibility.Hidden;
+        if (_immersive) RememberImmersiveBounds();
+        else
+        {
+            _normalBounds = WindowState == WindowState.Normal ? new(Left, Top, ActualWidth, ActualHeight) : RestoreBounds;
+            _normalWindowState = WindowState == WindowState.Minimized ? _restoreWindowState : WindowState;
+        }
+        WindowState = WindowState.Normal;
         _immersive = !_immersive;
         _root.Background = _immersive ? Brushes.Transparent : Ui.Canvas;
         _edgeProgress.Visibility = _immersive ? Visibility.Visible : Visibility.Collapsed;
@@ -621,11 +630,13 @@ public sealed partial class MainWindow : Window
         _dragHandle.Visibility = _immersive ? Visibility.Hidden : Visibility.Collapsed;
         if (_immersive)
         {
-            _normalBounds = new(Left, Top, ActualWidth, ActualHeight);
             MinWidth = 320; MinHeight = 180;
             foreach (var row in new[] { 0, 1, 3, 4 }) _root.RowDefinitions[row].Height = new(0);
             _workspace.ColumnDefinitions[1].Width = new(0);
-            Width = 640; Height = 360;
+            var bounds = _settings.ImmersiveBounds ?? new WindowPlacement(Left, Top, 640, 360);
+            Width = Math.Max(MinWidth, bounds.Width); Height = Math.Max(MinHeight, bounds.Height);
+            Left = bounds.Left; Top = bounds.Top;
+            Ui.PlaceVisible(this);
             Fire(() => CommandAsync("focusOn"));
         }
         else
@@ -635,9 +646,11 @@ public sealed partial class MainWindow : Window
             _root.RowDefinitions[3].Height = new(54); _root.RowDefinitions[4].Height = new(28);
             _workspace.ColumnDefinitions[1].Width = new(284);
             Width = _normalBounds.Width; Height = _normalBounds.Height; Left = _normalBounds.Left; Top = _normalBounds.Top;
+            WindowState = _normalWindowState;
             Fire(() => CommandAsync("focusOff"));
         }
         ApplyWindowSwitcher(); UpdateClip(); UpdateDanmakuOverlay(); UpdateImmersiveControls();
+        SaveSettings();
         Dispatcher.InvokeAsync(() => { _browser.Visibility = Visibility.Visible; _browser.UpdateLayout(); UpdateSmallWindowLayout(); UpdateXRayTracking(); }, DispatcherPriority.Loaded);
     }
     private void ToggleHidden()
@@ -675,6 +688,18 @@ public sealed partial class MainWindow : Window
             new RectangleGeometry(new Rect(0, 0, width, height)),
             new RectangleGeometry(new Rect((width - holeWidth) / 2, (height - holeHeight) / 2, holeWidth, holeHeight)));
     }
+    private void RememberImmersiveBounds()
+    {
+        var rect = WindowState == WindowState.Normal ? new Rect(Left, Top, ActualWidth, ActualHeight) : RestoreBounds;
+        var bounds = new WindowPlacement(rect.Left, rect.Top, rect.Width, rect.Height);
+        if (bounds.IsValid) _settings.ImmersiveBounds = bounds;
+    }
+    private void RememberOverlayBounds()
+    {
+        if (_overlay == null) return;
+        _settings.OverlayLeft = _overlay.Left; _settings.OverlayTop = _overlay.Top; _settings.OverlayWidth = _overlay.Width;
+    }
+
     internal void ApplySubtitleSettings() => _overlay?.ApplyFontSizes(_settings);
 
     private void UpdateOverlay()
@@ -682,8 +707,10 @@ public sealed partial class MainWindow : Window
         if (!_settings.SubtitleOverlay || !IsVisible || WindowState == WindowState.Minimized) { _overlay?.Hide(); return; }
         if (_overlay == null)
         {
-            _overlay = new() { Left = _settings.OverlayLeft, Top = _settings.OverlayTop, Width = Math.Clamp(_settings.OverlayWidth, 260, 1000) };
+            _overlay = new() { Left = _settings.OverlayLeft, Top = _settings.OverlayTop, Width = Math.Max(260, _settings.OverlayWidth) };
             ApplySubtitleSettings();
+            _overlay.PlacementChanged += SaveSettings;
+            _overlay.Closing += (_, _) => SaveSettings();
             _overlay.Show(); Ui.PlaceVisible(_overlay);
             _overlay.Closed += (_, _) => { _overlay = null; if (!_closing) { _settings.SubtitleOverlay = false; _overlayToggle.IsChecked = false; } };
         }

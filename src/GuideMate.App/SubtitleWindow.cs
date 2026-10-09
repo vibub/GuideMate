@@ -15,6 +15,7 @@ internal sealed class SubtitleWindow : Window
         HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom,
         ToolTip = "调整字幕宽度，高度随字幕自动适应" };
     private double _resizeOriginX, _resizeRightInset;
+    public event Action? PlacementChanged;
     public SubtitleWindow()
     {
         Title = "随引字幕与方向";
@@ -69,11 +70,12 @@ internal sealed class SubtitleWindow : Window
             var pointerX = _widthGrip.TranslatePoint(new(_resizeOriginX + e.HorizontalChange, 0), this).X;
             Width = Math.Max(MinWidth, pointerX + _resizeRightInset);
         };
+        _widthGrip.DragCompleted += (_, e) => { if (!e.Canceled) PlacementChanged?.Invoke(); };
         IsVisibleChanged += (_, _) => { if (!IsVisible) _widthGrip.CancelDrag(); };
         var surface = new Grid();
         surface.Children.Add(grid); surface.Children.Add(_widthGrip);
         Content = new Border { CornerRadius = new(4), Background = new SolidColorBrush(Color.FromArgb(228, 28, 32, 33)), Child = surface };
-        MouseLeftButtonDown += (_, e) => { if (e.ClickCount == 1) DragMove(); };
+        MouseLeftButtonDown += (_, e) => { if (e.ClickCount == 1) { DragMove(); PlacementChanged?.Invoke(); } };
         Update("", null);
     }
     public void ApplyFontSizes(AppSettings settings)

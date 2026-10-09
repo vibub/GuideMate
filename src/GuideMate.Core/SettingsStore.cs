@@ -14,6 +14,10 @@ public sealed class SettingsStore(string directory)
         try
         {
             var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(_path), _options) ?? new();
+            if (settings.ImmersiveBounds is { IsValid: false }) settings.ImmersiveBounds = null;
+            settings.OverlayWidth = double.IsFinite(settings.OverlayWidth) ? Math.Max(260, settings.OverlayWidth) : 520;
+            settings.OverlayLeft = double.IsFinite(settings.OverlayLeft) ? settings.OverlayLeft : 140;
+            settings.OverlayTop = double.IsFinite(settings.OverlayTop) ? settings.OverlayTop : 860;
             if (settings.TopmostMode.HasValue && !Enum.IsDefined(settings.TopmostMode.Value)) settings.TopmostMode = null;
             settings.Opacity = Math.Clamp(settings.Opacity, 0.2, 1);
             if (settings.ImmersiveOpacity is { } opacity)

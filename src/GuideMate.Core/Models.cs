@@ -15,12 +15,20 @@ public class SavedVideo
     public override string ToString() => $"{Title}\n{TimeSpan.FromSeconds(Math.Max(0, Position)):hh\\:mm\\:ss}";
 }
 
+public sealed record WindowPlacement(double Left, double Top, double Width, double Height)
+{
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsValid => double.IsFinite(Left) && double.IsFinite(Top)
+        && double.IsFinite(Width) && double.IsFinite(Height) && Width > 0 && Height > 0;
+}
+
 public class AppSettings
 {
     public double Left { get; set; } = 120;
     public double Top { get; set; } = 80;
     public double Width { get; set; } = 1160;
     public double Height { get; set; } = 760;
+    public WindowPlacement? ImmersiveBounds { get; set; }
     public double OverlayLeft { get; set; } = 140;
     public double OverlayTop { get; set; } = 860;
     public double OverlayWidth { get; set; } = 520;
