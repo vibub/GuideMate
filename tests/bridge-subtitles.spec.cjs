@@ -33,7 +33,10 @@ class Element {
       selector = selector.trim();
       if (selector.startsWith('.')) return this.className.split(/\s+/).includes(selector.slice(1));
       if (selector.startsWith('#')) return this.id === selector.slice(1);
-      if (selector.startsWith('[')) return this.attributes.has(selector.slice(1, -1));
+      if (selector.startsWith('[')) {
+        const [, name, value] = selector.match(/^\[([^=\]]+)(?:="([^"]*)")?\]$/) || [];
+        return this.attributes.has(name) && (value === undefined || this.attributes.get(name) === value);
+      }
       return this.nodeName.toLowerCase() === selector;
     });
   }
@@ -52,6 +55,9 @@ class Element {
     return {left: 0, top: 0, right: 1280, bottom: hidden ? 0 : 720, width: 1280, height: hidden ? 0 : 720};
   }
   setAttribute(name, value) { this.attributes.set(name, value); }
+  getAttribute(name) { return this.attributes.get(name) ?? null; }
+  get textContent() { return this.childNodes.map(child => child.textContent).join(''); }
+  click() { this.onClick?.(); }
   removeAttribute(name) { this.attributes.delete(name); }
   remove() {
     this.parentElement.childNodes = this.parentElement.childNodes.filter(child => child !== this);
@@ -81,9 +87,10 @@ const getComputedStyle = element => {
   return {display: 'block', opacity: '1', visibility: visibility || 'visible', ...element.style};
 };
 const bridgePath = process.argv[2] ? path.resolve(process.argv[2]) : path.join(__dirname, '../assets/bridge.js');
+const location = {hostname: 'www.bilibili.com', href: 'https://www.bilibili.com/video/BV14Z421L7DN/?p=3'};
 vm.runInNewContext(fs.readFileSync(bridgePath, 'utf8'), {
   window, document, getComputedStyle, crypto: {randomUUID: () => 'synthetic-frame'},
-  innerWidth: 1280, innerHeight: 720, location: {href: 'https://www.bilibili.com/video/BV14Z421L7DN/?p=3'},
+  innerWidth: 1280, innerHeight: 720, location, URL,
   addEventListener() {}, setInterval: callback => {tick = callback;}, setTimeout: () => 1, clearTimeout() {}
 });
 
@@ -171,5 +178,113 @@ video.textTracks[0] = {kind: 'captions', mode: 'showing', activeCues: [{text: ' 
 expect('Turn left', 'empty native track falls back to DOM captions');
 video.textTracks[0].activeCues = [{text: 'captions track'}];
 expect('captions track', 'native captions track remains supported');
+
+let media = 3;
+function nextMedia(hostname = 'www.bilibili.com') {
+  clearCaptions(); video.seeking = false;
+  location.hostname = hostname;
+  location.href = `https://${hostname}/video/BV14Z421L7DN/?p=${++media}`;
+  video.currentSrc = 'blob:synthetic-video-' + media;
+}
+function menu(languages) {
+  const section = caption('bpx-player-ctrl-subtitle-language', []);
+  const major = caption('bpx-player-ctrl-subtitle-major-inner', [], section);
+  const close = caption('bpx-player-ctrl-subtitle-close-switch bpx-state-active', []);
+  const panel = caption('bili-subtitle-x-subtitle-panel-text', []);
+  const choices = languages.map(({language, label, disabled, ignore}) => {
+    const item = caption('bpx-player-ctrl-subtitle-language-item', [label], major);
+    item.setAttribute('data-lan', language);
+    if (disabled) item.setAttribute('aria-disabled', 'true');
+    item.clicks = 0;
+    item.onClick = () => {
+      item.clicks++;
+      if (ignore) return;
+      major.childNodes.forEach(choice => choice.classList.toggle('bpx-state-active', choice === item));
+      close.classList.toggle('bpx-state-active', false);
+      panel.style = {}; panel.childNodes = [{nodeType: 3, textContent: label + '字幕'}];
+    };
+    return item;
+  });
+  close.onClick = () => {
+    close.classList.toggle('bpx-state-active', true);
+    choices.forEach(choice => choice.classList.toggle('bpx-state-active', false));
+    panel.style.display = 'none';
+  };
+  return {section, major, close, panel, choices};
+}
+nextMedia();
+const initialMenu = menu([{language:'en', label:'English'}, {language:'ai-zh', label:'中文 AI'}]);
+expect('中文 AI字幕', 'entering a Bilibili video enables Chinese AI captions without choosing English');
+assert.equal(initialMenu.choices[1].clicks, 1);
+expect('中文 AI字幕', 'an enabled track is not toggled again on the next state update');
+initialMenu.close.click();
+expect('', 'manually closing captions stays closed within this episode');
+video.currentSrc = 'blob:quality-change'; location.href += '&vd_source=tracking#t=30';
+expect('', 'quality and tracking changes do not overwrite the manual close choice');
+assert.equal(initialMenu.choices[1].clicks, 1);
+nextMedia();
+expect('', 'a new episode waits for its asynchronously loaded subtitle menu');
+for (let i = 0; i < 12; i++) tick();
+window.guideMate.command({action:'focusOn'});
+const delayedMenu = menu([{language:'en', label:'English'}, {language:'ai-zh', label:'中文 AI'}]);
+expect('中文 AI字幕', 'Chinese captions load and synchronize even when immersive focus hides the menu');
+window.guideMate.command({action:'focusOff'});
+nextMedia();
+const preferredMenu = menu([{language:'ai-zh', label:'中文 AI'}, {language:'zh-Hans', label:'简体中文'}, {language:'zh-Hant', label:'繁體中文'}]);
+expect('简体中文字幕', 'uploader Chinese takes priority over AI and traditional Chinese');
+preferredMenu.choices[2].click();
+expect('繁體中文字幕', 'a manual language change is preserved during this episode');
+nextMedia();
+const noChineseMenu = menu([{language:'en', label:'English'}, {language:'ja', label:'日本語'}]);
+expect('', 'a video with no Chinese track is not switched to another language');
+assert.ok(noChineseMenu.choices.every(choice => choice.clicks === 0));
+nextMedia();
+const loggedOutMenu = menu([{language:'ai-zh', label:'中文 AI'}]); loggedOutMenu.section.style.display = 'none';
+expect('', 'the site login-gated language section is left alone');
+assert.equal(loggedOutMenu.choices[0].clicks, 0);
+loggedOutMenu.section.style = {};
+expect('中文 AI字幕', 'available captions can initialize after the login gate clears');
+nextMedia();
+const disabledMenu = menu([{language:'ai-zh', label:'中文 AI', disabled:true}]);
+expect('', 'a disabled Chinese item is not activated');
+assert.equal(disabledMenu.choices[0].clicks, 0);
+nextMedia();
+const minorMenu = menu([{language:'en', label:'English'}]);
+const minor = caption('bpx-player-ctrl-subtitle-minor-inner', [new Element('bpx-player-ctrl-subtitle-language-item', ['中文'])], minorMenu.section);
+minor.childNodes[0].setAttribute('data-lan', 'ai-zh');
+minor.childNodes[0].onClick = () => { throw new Error('must not select a secondary subtitle'); };
+expect('', 'Chinese in the secondary menu does not change the main subtitle or audio');
+nextMedia();
+const otherSiteMenu = menu([{language:'ai-zh', label:'中文 AI'}]);
+location.hostname = 'bilibili.com.example.test';
+expect('', 'Bilibili-looking markup on another host is not activated');
+assert.equal(otherSiteMenu.choices[0].clicks, 0);
+nextMedia();
+const failedMenu = menu([{language:'ai-zh', label:'中文 AI', ignore:true}]);
+for (let i = 0; i < 150; i++) tick();
+assert.equal(failedMenu.choices[0].clicks, 3, 'unresponsive site controls receive only bounded retries'); passed++;
+nextMedia();
+for (let i = 0; i < 150; i++) tick();
+const lateMenu = menu([{language:'ai-zh', label:'中文 AI'}]);
+expect('', 'missing subtitle initialization stops after the bounded wait');
+assert.equal(lateMenu.choices[0].clicks, 0);
+nextMedia('example.test');
+video.textTracks = [
+  {kind:'metadata', language:'zh', mode:'hidden', activeCues:[{text:'metadata'}]},
+  {kind:'subtitles', language:'en', mode:'showing', activeCues:[{text:'English'}]},
+  {kind:'captions', language:'zh-CN', mode:'disabled', activeCues:[{text:'原生中文字幕'}]}
+];
+expect('原生中文字幕', 'native HTML5 Chinese captions are enabled on a new video');
+assert.equal(video.textTracks[0].mode, 'hidden');
+assert.equal(video.textTracks[1].mode, 'disabled');
+video.textTracks[2].mode = 'disabled';
+expect('', 'manual native caption closure is preserved');
+nextMedia('example.test');
+expect('', 'native subtitles can be added asynchronously');
+video.textTracks = [{kind:'subtitles', language:'', label:'Chinese', mode:'disabled', activeCues:[{text:'延迟加载中文'}]}];
+expect('延迟加载中文', 'a native Chinese label works when the language code is absent');
+nextMedia('example.test');
+video.textTracks = [{kind:'subtitles', language:'en', mode:'disabled', activeCues:[{text:'English'}]}];
+expect('', 'native foreign-language-only subtitles remain disabled');
 
 console.log(`PASS ${passed} webpage subtitle bridge checks; no UI or user data opened`);

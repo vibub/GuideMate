@@ -20,7 +20,7 @@ const window = {chrome:{webview:{postMessage:value => state=value}}, addEventLis
 window.top = window;
 const location = {hostname:'www.bilibili.com',href:'https://www.bilibili.com/video/BV14Z421L7DN/'};
 vm.runInNewContext(fs.readFileSync(require.resolve('../assets/bridge.js'),'utf8'), {
-  window,document,location,crypto:{randomUUID:() => 'fixture'},
+  window,document,location,URL,crypto:{randomUUID:() => 'fixture'},
   getComputedStyle:() => ({visibility:'visible',display:'block',opacity:'1'}),
   innerWidth:640,innerHeight:360,setInterval:fn => tick=fn,setTimeout:() => 1,clearTimeout() {},addEventListener() {}
 });

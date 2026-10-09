@@ -103,11 +103,56 @@
     }
     return '';
   };
+  const isBilibili = () => location.hostname === 'bilibili.com' || location.hostname?.endsWith('.bilibili.com');
+  const chineseRank = (language = '', label = '') => {
+    const code = language.toLowerCase().replace(/_/g, '-');
+    if (code ? !/^(ai-)?(zh|zho|chi)(-|$)/.test(code) : !/中文|汉语|漢語|chinese/i.test(label)) return Infinity;
+    // Prefer an uploader's Chinese track, then the site's Chinese AI track.
+    return (code.startsWith('ai-') || /\bAI\b/i.test(label) ? 10 : 0) + (/hant|tw|hk|繁/.test(code + label) ? 1 : 0);
+  };
+  let defaultSubtitle = null;
+  const enableChineseSubtitle = video => {
+    const bilibili = isBilibili();
+    const url = new URL(location.href);
+    // Source/quality and tracking-parameter changes within a Bilibili episode
+    // must not undo a user's manual subtitle choice.
+    const key = bilibili ? url.pathname + '|p=' + (url.searchParams.get('p') || '1') : video.currentSrc;
+    if (!defaultSubtitle || defaultSubtitle.video !== video || defaultSubtitle.key !== key)
+      defaultSubtitle = {video, key, remaining:120, done:false, clicks:0, wait:0};
+    const state = defaultSubtitle;
+    if (state.done || !video.currentSrc || video.seeking || state.remaining-- <= 0) return;
+    const tracks = [...(video.textTracks || [])].filter(track => ['subtitles', 'captions'].includes(track.kind));
+    const chinese = tracks.filter(track => Number.isFinite(chineseRank(track.language, track.label)))
+      .sort((a, b) => chineseRank(a.language, a.label) - chineseRank(b.language, b.label))[0];
+    if (chinese) {
+      for (const track of tracks) track.mode = track === chinese ? 'showing' : 'disabled';
+      state.done = true; return;
+    }
+    if (!bilibili) return;
+    const root = video.closest('.bpx-player-container, .bilibili-player, #bilibili-player');
+    const languages = root?.querySelector('.bpx-player-ctrl-subtitle-language');
+    // The site hides this language section when login/permission is required.
+    // The outer menu may be hidden by hover or our immersive CSS; that is fine.
+    if (!languages || languages.hidden || getComputedStyle(languages).display === 'none') return;
+    const major = languages.querySelector('.bpx-player-ctrl-subtitle-major-inner');
+    const items = [...(major?.querySelectorAll('.bpx-player-ctrl-subtitle-language-item') || [])]
+      .filter(item => !item.matches('[disabled],[aria-disabled="true"],.bui-disabled')
+        && Number.isFinite(chineseRank(item.getAttribute('data-lan') || '', item.textContent)))
+      .sort((a, b) => chineseRank(a.getAttribute('data-lan') || '', a.textContent)
+        - chineseRank(b.getAttribute('data-lan') || '', b.textContent));
+    const item = items[0];
+    if (!item) return;
+    const closed = root.querySelector('.bpx-player-ctrl-subtitle-close-switch')?.matches('.bpx-state-active');
+    if (item.matches('.bpx-state-active') && !closed) { state.done = true; return; }
+    if (state.wait-- > 0 || state.clicks >= 3) return;
+    item.click(); state.clicks++; state.wait = 8;
+    state.done = item.matches('.bpx-state-active')
+      && !root.querySelector('.bpx-player-ctrl-subtitle-close-switch')?.matches('.bpx-state-active');
+  };
   let danmakuVideo = null, danmakuEpoch = 0;
   const danmakuSeek = () => { danmakuEpoch++; };
   const danmaku = video => {
-    const host = location.hostname || '';
-    if (host !== 'bilibili.com' && !host.endsWith('.bilibili.com')) return null;
+    if (!isBilibili()) return null;
     // The current Bilibili player exposes its post-filter render models. Reading
     // these avoids intercepting canvas calls or bypassing the user's DM filters.
     if (danmakuVideo !== video) {
@@ -213,7 +258,7 @@
     } else focusElement(frame, message.enabled === true);
   });
   const episode = next => {
-    const bilibili = location.hostname === 'bilibili.com' || location.hostname.endsWith('.bilibili.com');
+    const bilibili = isBilibili();
     const youtube = location.hostname === 'youtube.com' || location.hostname === 'www.youtube.com';
     const selectors = bilibili ? ['.video-pod__list .video-pod__item', '.video-sections-content-list .video-episode-card', '.multi-page .list-box li', '.video-section-list .video-episode-card']
       : youtube ? ['#playlist-items ytd-playlist-panel-video-renderer'] : ['[data-guidemate-episode]'];
@@ -280,6 +325,7 @@
       if (preferredRate !== null) video.playbackRate = preferredRate;
       if (focusEnabled) setFocus(true);
     }
+    enableChineseSubtitle(video);
     post({ type: 'state', area:area(video), mediaKey:location.href + '|' + video.currentSrc, time: finite(video.currentTime), duration: finite(video.duration), paused: video.paused,
       rate: video.playbackRate, volume: video.volume, muted: video.muted, subtitle: subtitle(video), danmaku:danmaku(video),
       width:video.videoWidth, height:video.videoHeight, seeking:video.seeking });
