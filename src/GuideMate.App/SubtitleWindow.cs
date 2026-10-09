@@ -78,8 +78,9 @@ internal sealed class SubtitleWindow : Window
         MouseLeftButtonDown += (_, e) => { if (e.ClickCount == 1) { DragMove(); PlacementChanged?.Invoke(); } };
         Update("", null);
     }
-    public void ApplyFontSizes(AppSettings settings)
+    public void ApplySettings(AppSettings settings)
     {
+        Opacity = settings.SubtitleOpacity;
         _subtitle.FontSize = settings.SubtitleFontSize;
         _direction.FontSize = settings.DirectionFontSize;
     }

@@ -66,6 +66,7 @@ internal sealed class SettingsWindow : Window
             value => value == 1 ? "适中（1x）" : $"{value:0.##}x");
         panel = Section("字幕与方向", "字幕");
         panel.Children.Add(Ui.Text("调整字幕与方向浮窗的文字大小，保存后生效。", 12, Ui.Muted));
+        var subtitleOpacity = SettingsSlider("字幕窗口透明度", 0, 0.8, 1 - settings.SubtitleOpacity, 0.05, value => $"{value:P0}");
         var subtitleFont = SettingsSlider("字幕字号", 12, 48, settings.SubtitleFontSize, 1, value => $"{value:0}");
         var directionFont = SettingsSlider("方向指引字号", 12, 48, settings.DirectionFontSize, 1, value => $"{value:0}");
         panel = Section("沉浸小窗", "小窗");
@@ -119,6 +120,7 @@ internal sealed class SettingsWindow : Window
             settings.DanmakuFontScale = danmakuFont.Value;
             settings.DanmakuSpeed = danmakuSpeed.Value;
             owner.ApplyDanmakuSettings();
+            settings.SubtitleOpacity = 1 - subtitleOpacity.Value;
             settings.SubtitleFontSize = subtitleFont.Value;
             settings.DirectionFontSize = directionFont.Value;
             owner.ApplySubtitleSettings();

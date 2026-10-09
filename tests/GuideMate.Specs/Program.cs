@@ -108,6 +108,17 @@ Check(windowReload.Width == loaded.Width && windowReload.Height == loaded.Height
 store.Save(new AppSettings { ImmersiveBounds = new(10, 20, 0, 360), OverlayWidth = 10 });
 var invalidBounds = store.Load();
 Check(invalidBounds.ImmersiveBounds == null && invalidBounds.OverlayWidth == 260, "invalid saved bounds are rejected without affecting legacy placement defaults");
+loaded.SubtitleOpacity = 0.55;
+store.Save(loaded);
+var subtitleAppearance = store.Load();
+Check(subtitleAppearance.SubtitleOpacity == 0.55 && subtitleAppearance.Opacity == loaded.Opacity
+    && subtitleAppearance.GetImmersiveOpacity() == loaded.GetImmersiveOpacity(), "subtitle opacity persists independently of main and immersive opacity");
+Check(subtitleAppearance.OverlayWidth == loaded.OverlayWidth && subtitleAppearance.Hotkeys["Hide"] == "Ctrl+Shift+H"
+    && subtitleAppearance.Bookmarks[0].Position == 12, "subtitle opacity preserves placement and user data");
+store.Save(new AppSettings { SubtitleOpacity = -1 });
+Check(store.Load().SubtitleOpacity == 0.2, "subtitle opacity lower bound keeps overlay visible");
+store.Save(new AppSettings { SubtitleOpacity = 2 });
+Check(store.Load().SubtitleOpacity == 1, "subtitle opacity upper bound is normalized");
 var calibration = new OnlineVisionProfile(1920, 1080, new(0.1, 0.2, 0.075, 0.13333333333333333), true, 13);
 loaded.OnlineVisionCalibration = calibration;
 loaded.OnlineVisionProfiles["https://example.com/old?p=1"] = calibration with { NorthAngle = 27 };
@@ -181,6 +192,7 @@ Check(oldAppearance.ImmersiveOpacity == null && oldAppearance.GetImmersiveOpacit
 Check(oldAppearance.DanmakuDisplayArea == 1 && oldAppearance.DanmakuOpacity == 1
     && oldAppearance.DanmakuFontScale == 1 && oldAppearance.DanmakuSpeed == 1
     && oldAppearance.Hotkeys["Hide"] == "Ctrl+Shift+H", "legacy JSON without danmaku fields retains appearance and custom binding");
+Check(oldAppearance.SubtitleOpacity == 1, "legacy profiles preserve previous subtitle opacity");
 Check(oldAppearance.SubtitleFontSize == 16 && oldAppearance.DirectionFontSize == 21,
     "legacy settings retain the existing subtitle and direction font sizes");
 oldAppearance.SubtitleFontSize = 28; oldAppearance.DirectionFontSize = 36;

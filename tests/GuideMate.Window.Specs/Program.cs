@@ -1,3 +1,4 @@
+using Button = System.Windows.Controls.Button;
 using System.IO;
 using System.Reflection;
 using System.Windows;
@@ -23,11 +24,12 @@ internal static class Program
         var store = new SettingsStore(profile);
         var initial = new AppSettings { Left = 120, Top = 80, Width = 900, Height = 600,
             ImmersiveBounds = new(300, 220, 704, 396), OverlayLeft = 200, OverlayTop = 100, OverlayWidth = 620,
-            SubtitleOverlay = true };
+            SubtitleOpacity = 0.65, SubtitleOverlay = true };
         initial.Bookmarks.Add(new() { Url = "https://example.test/saved", Position = 42 });
         store.Save(initial);
         var app = new GuideMate.App.App { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         app.InitializeComponent();
+        Wpf.Ui.Appearance.ApplicationAccentColorManager.Apply(System.Windows.Media.Color.FromRgb(19, 124, 102));
         MainWindow? window = null;
         try
         {
@@ -68,14 +70,35 @@ internal static class Program
                 "new subtitle window restores saved width and position");
             Check(store.Load().Bookmarks[0].Position == 42, "window saving preserves video library");
             var settingsType = typeof(MainWindow).Assembly.GetType("GuideMate.App.SettingsWindow")!;
-            var settings = (Window)Activator.CreateInstance(settingsType,
+            Window Settings() => (Window)Activator.CreateInstance(settingsType,
                 window, Field<AppSettings>(window, "_settings"), Field<object>(window, "_keys"),
                 (Func<Dictionary<string, string>, int, string?>)((_, _) => null))!;
+            var settings = Settings();
             settings.Show(); Pump(100);
             Check(Texts(settings).Any(t => t.Text.Contains("管理员权限") && t.Text.Contains("BetterGI")),
                 "rendered hotkey settings include administrator guidance");
             Capture(settings, Path.Combine(output, "hotkey-settings.png"));
+            var opacitySlider = Descendants(settings).OfType<Slider>().Single(slider =>
+                System.Windows.Automation.AutomationProperties.GetName(slider) == "字幕窗口透明度");
+            Check(Near(overlay.Opacity, 0.65) && Math.Abs(opacitySlider.Value - 0.35) < 0.001,
+                "subtitle opacity initializes from saved value");
+            opacitySlider.Value = 0.55;
             settings.Close();
+            Check(Math.Abs(overlay.Opacity - 0.65) < 0.001 && Math.Abs(store.Load().SubtitleOpacity - 0.65) < 0.001,
+                "cancel discards unsaved subtitle opacity");
+            settings = Settings(); settings.Show(); Pump(80);
+            opacitySlider = Descendants(settings).OfType<Slider>().Single(slider =>
+                System.Windows.Automation.AutomationProperties.GetName(slider) == "字幕窗口透明度");
+            opacitySlider.Value = 0.55;
+            var save = Descendants(settings).OfType<Button>().Single(button =>
+                System.Windows.Automation.AutomationProperties.GetName(button) == "保存设置");
+            save.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump(80);
+            Check(Math.Abs(overlay.Opacity - 0.45) < 0.001 && Math.Abs(store.Load().SubtitleOpacity - 0.45) < 0.001,
+                "save immediately applies subtitle opacity and persists it");
+            Capture(overlay, Path.Combine(output, "subtitle-opacity.png"));
+            overlay.Close(); Field<AppSettings>(window, "_settings").SubtitleOverlay = true; Invoke(window, "UpdateOverlay"); Pump(80);
+            Check(Math.Abs(Field<Window>(window, "_overlay").Opacity - 0.45) < 0.001,
+                "newly created subtitle window reapplies saved opacity");
         }
         finally { window?.Close(); Pump(100); app.Shutdown(); }
         Console.WriteLine($"{_checks} isolated desktop window checks passed; no physical mouse or game test.");
@@ -107,12 +130,13 @@ internal static class Program
         timer.Tick += (_, _) => { timer.Stop(); frame.Continue = false; };
         timer.Start(); Dispatcher.PushFrame(frame);
     }
-    internal static IEnumerable<TextBlock> Texts(DependencyObject root)
+    internal static IEnumerable<DependencyObject> Descendants(DependencyObject root)
     {
-        if (root is TextBlock text) yield return text;
+        yield return root;
         for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
-            foreach (var item in Texts(VisualTreeHelper.GetChild(root, i))) yield return item;
+            foreach (var item in Descendants(VisualTreeHelper.GetChild(root, i))) yield return item;
     }
+    internal static IEnumerable<TextBlock> Texts(DependencyObject root) => Descendants(root).OfType<TextBlock>();
     internal static void Capture(Window window, string path)
     {
         var point = window.PointToScreen(new());

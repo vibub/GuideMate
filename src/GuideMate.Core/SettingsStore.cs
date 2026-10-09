@@ -26,6 +26,7 @@ public sealed class SettingsStore(string directory)
             settings.DanmakuOpacity = double.IsFinite(settings.DanmakuOpacity) ? Math.Clamp(settings.DanmakuOpacity, 0, 1) : 1;
             settings.DanmakuFontScale = double.IsFinite(settings.DanmakuFontScale) ? Math.Clamp(settings.DanmakuFontScale, 0.5, 2) : 1;
             settings.DanmakuSpeed = double.IsFinite(settings.DanmakuSpeed) ? Math.Clamp(settings.DanmakuSpeed, 0.5, 2) : 1;
+            settings.SubtitleOpacity = double.IsFinite(settings.SubtitleOpacity) ? Math.Clamp(settings.SubtitleOpacity, 0.2, 1) : 1;
             settings.SubtitleFontSize = double.IsFinite(settings.SubtitleFontSize) ? Math.Clamp(settings.SubtitleFontSize, 12, 48) : 16;
             settings.DirectionFontSize = double.IsFinite(settings.DirectionFontSize) ? Math.Clamp(settings.DirectionFontSize, 12, 48) : 21;
             settings.XRayRadius = double.IsFinite(settings.XRayRadius) ? Math.Clamp(settings.XRayRadius, 20, 200) : 70;

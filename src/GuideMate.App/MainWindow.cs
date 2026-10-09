@@ -700,7 +700,7 @@ public sealed partial class MainWindow : Window
         _settings.OverlayLeft = _overlay.Left; _settings.OverlayTop = _overlay.Top; _settings.OverlayWidth = _overlay.Width;
     }
 
-    internal void ApplySubtitleSettings() => _overlay?.ApplyFontSizes(_settings);
+    internal void ApplySubtitleSettings() => _overlay?.ApplySettings(_settings);
 
     private void UpdateOverlay()
     {
