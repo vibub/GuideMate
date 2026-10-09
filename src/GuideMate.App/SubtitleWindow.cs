@@ -2,7 +2,7 @@ using System.Windows.Controls.Primitives;
 
 namespace GuideMate.App;
 
-internal sealed class SubtitleWindow : Window
+internal sealed partial class SubtitleWindow : Window
 {
     private readonly TextBlock _direction = Ui.Text("", 21, Brushes.White);
     private readonly TextBlock _subtitle = Ui.Text("", 16, Brushes.White);
@@ -13,7 +13,7 @@ internal sealed class SubtitleWindow : Window
     private readonly TextBlock _empty = Ui.Text("等待字幕或方向提示", 14, new SolidColorBrush(Color.FromRgb(168, 217, 198)));
     private readonly Thumb _widthGrip = new() { Width = 22, Height = 20, Cursor = Cursors.SizeWE,
         HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom,
-        ToolTip = "调整字幕宽度，高度随字幕自动适应" };
+        ToolTip = "长按后左右拖动调整字幕宽度，高度随字幕自动适应" };
     private double _resizeOriginX, _resizeRightInset;
     public event Action? PlacementChanged;
     public SubtitleWindow()
@@ -21,7 +21,11 @@ internal sealed class SubtitleWindow : Window
         Title = "随引字幕与方向";
         Width = 520; SizeToContent = SizeToContent.Height; MinWidth = 260; MinHeight = 56;
         Topmost = true; ShowInTaskbar = false; ShowActivated = false; WindowStyle = WindowStyle.None;
-        SourceInitialized += (_, _) => NativeHotkeys.HideFromWindowSwitcher(this, true);
+        SourceInitialized += (_, _) =>
+        {
+            NativeHotkeys.HideFromWindowSwitcher(this, true);
+            NativeHotkeys.ClickThrough(this, true);
+        };
         AllowsTransparency = true; Background = Brushes.Transparent; ResizeMode = ResizeMode.NoResize;
         var grid = new Grid { Margin = new(14, 10, 14, 20) };
         grid.RowDefinitions.Add(new() { Height = GridLength.Auto });
@@ -75,7 +79,7 @@ internal sealed class SubtitleWindow : Window
         var surface = new Grid();
         surface.Children.Add(grid); surface.Children.Add(_widthGrip);
         Content = new Border { CornerRadius = new(4), Background = new SolidColorBrush(Color.FromArgb(228, 28, 32, 33)), Child = surface };
-        MouseLeftButtonDown += (_, e) => { if (e.ClickCount == 1) { DragMove(); PlacementChanged?.Invoke(); } };
+        InitializePointerGesture();
         Update("", null);
     }
     public void ApplySettings(AppSettings settings)

@@ -60,6 +60,9 @@ internal static class Program
         try
         {
             window = Open();
+            Check(Texts(window).Any(text => text.Text == "点击穿透；长按拖动，右下角调宽"),
+                "main subtitle option includes the concise pointer gesture hint");
+            Capture(window, Path.Combine(output, "subtitle-pointer-help.png"));
             Check(Field<Window?>(window, "_overlay")?.IsVisible != true && store.Load().SubtitleOverlay,
                 "normal startup keeps the subtitle preference without showing its window");
             window.WindowState = WindowState.Maximized; Pump(60);
@@ -70,6 +73,7 @@ internal static class Program
             var overlay = Field<Window>(window, "_overlay");
             Check(overlay.IsVisible && Near(overlay.Width, 620) && overlay.SizeToContent == SizeToContent.Height,
                 "subtitle restores saved width while retaining automatic height");
+            SubtitlePointerSpecs.Run(window, overlay, output);
             overlay.Left = 240; overlay.Top = 140; overlay.Width = 780;
             Field<Action?>(overlay, "PlacementChanged")?.Invoke();
             Check(store.Load().OverlayWidth == 780 && Near(store.Load().OverlayLeft, 240),
@@ -103,6 +107,9 @@ internal static class Program
                 "hide and restore preserve both window placements");
             window.Close(); window = null; Pump(60);
             window = Open();
+            Check(Texts(window).Any(text => text.Text == "点击穿透；长按拖动，右下角调宽"),
+                "main subtitle option includes the concise pointer gesture hint");
+            Capture(window, Path.Combine(output, "subtitle-pointer-help.png"));
             Check(Field<Window?>(window, "_overlay")?.IsVisible != true,
                 "reloaded normal window waits for immersive mode before showing subtitles");
             Invoke(window, "ToggleImmersive"); Pump(80);

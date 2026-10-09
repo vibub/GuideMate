@@ -171,6 +171,10 @@ public sealed partial class MainWindow : Window
         follow.Children.Add(Ui.Command("\uE894", "清除导入字幕", () => { _cues = []; _lastCaption = ""; _subtitleSource.Text = "网页字幕"; }));
         _overlayToggle = Ui.Toggle("字幕与方向浮窗（仅沉浸模式）", _settings.SubtitleOverlay, value => { _settings.SubtitleOverlay = value; UpdateOverlay(); });
         follow.Children.Add(_overlayToggle);
+        var overlayHint = Ui.Text("点击穿透；长按拖动，右下角调宽", 11, Ui.Muted);
+        overlayHint.Margin = new(0, 0, 0, 8);
+        overlayHint.ToolTip = "按住约 0.4 秒后拖动字幕窗口；右下角同样长按后左右拖动调节宽度。";
+        follow.Children.Add(overlayHint);
         var offsetRow = new Grid(); offsetRow.ColumnDefinitions.Add(new()); offsetRow.ColumnDefinitions.Add(new() { Width = new(74) });
         offsetRow.Children.Add(Ui.Text("字幕延迟（秒）", 12));
         var offset = new TextBox { Text = _settings.SubtitleOffset.ToString(CultureInfo.InvariantCulture), ToolTip = "正值延后字幕，负值提前" };
@@ -623,7 +627,6 @@ public sealed partial class MainWindow : Window
         if (_through == enabled) return;
         CancelWindowResize();
         _through = enabled; NativeHotkeys.ClickThrough(this, enabled);
-        if (_overlay?.IsVisible == true) NativeHotkeys.ClickThrough(_overlay, enabled);
         _throughToggle.IsChecked = enabled;
     }
     private void ToggleImmersive()
@@ -739,7 +742,6 @@ public sealed partial class MainWindow : Window
         }
         else _overlay.Show();
         _overlay.Update(_lastCaption, CurrentDirection());
-        NativeHotkeys.ClickThrough(_overlay, _through);
     }
     private void InitializeTray()
     {
