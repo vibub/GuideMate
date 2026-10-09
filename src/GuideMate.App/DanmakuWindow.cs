@@ -127,7 +127,6 @@ internal sealed class DanmakuWindow
         private bool _paused = true;
         private readonly DanmakuComposition _composition;
         private double ActualWidth, ActualHeight, _dpi = 1;
-        private int _nextRow;
         private sealed record Appearance(double Area, double Opacity, double FontScale, double Speed);
         private Appearance _appearance = new(1, 1, 1, 1);
         private double RowHeight => 42 * _appearance.FontScale;
@@ -167,7 +166,7 @@ internal sealed class DanmakuWindow
         public void Clear()
         {
             foreach (var comment in _comments) _composition.Remove(comment.Sprite);
-            _comments.Clear(); _seen.Clear(); _nextRow = 0;
+            _comments.Clear(); _seen.Clear();
             _composition.Commit();
         }
 
@@ -191,6 +190,8 @@ internal sealed class DanmakuWindow
             RemoveExpired();
             if (resync) foreach (var comment in _comments) Position(comment);
             var current = new HashSet<string>();
+            var rows = Math.Max(1, (int)((AreaHeight - 24) / RowHeight));
+            Span<bool> blockedRows = stackalloc bool[rows];
             foreach (var item in items.EnumerateArray().Take(240))
             {
                 if (item.ValueKind != JsonValueKind.Object) continue;
@@ -215,12 +216,19 @@ internal sealed class DanmakuWindow
                 var start = time - Math.Clamp(Number(item, "offset", 0), 0, 4);
                 var duration = mode is 4 or 5 ? 5 / _appearance.Speed : (ActualWidth + width) / ScrollSpeed;
                 if (time - start >= duration) continue;
-                var rows = Math.Max(1, (int)((AreaHeight - 24) / RowHeight));
+                // Classify occupied lanes once per incoming comment, rather than rescan every sprite for each row.
+                blockedRows.Clear();
+                foreach (var previous in _comments)
+                {
+                    if (!blockedRows[previous.Row] && (mode is 4 or 5 || previous.Mode is 4 or 5
+                        || (mode == 6) != (previous.Mode == 6) || !HasRoom(previous, width, start, mode)))
+                        blockedRows[previous.Row] = true;
+                }
                 for (var i = 0; i < rows; i++)
                 {
-                    var row = mode == 5 ? i : mode == 4 ? rows - i - 1 : (_nextRow + i) % rows;
-                    if (_comments.Any(comment => comment.Row == row && (mode is 4 or 5 || comment.Mode is 4 or 5
-                        || (mode == 6) != (comment.Mode == 6) || !HasRoom(comment, width, start, mode)))) continue;
+                    // Reuse the first safe lane; a rotating cursor sends sparse comments down empty rows.
+                    var row = mode == 4 ? rows - i - 1 : i;
+                    if (blockedRows[row]) continue;
                     // Rasterize once, then upload only this glyph-sized sprite to DirectComposition.
                     var bounds = geometry.Bounds; bounds.Inflate(2, 2);
                     var dpi = new DpiScale(_dpi, _dpi);
@@ -238,7 +246,6 @@ internal sealed class DanmakuWindow
                     var comment = new Comment(_composition.Add(image, _dpi), bounds, width, start, duration, row, mode);
                     _comments.Add(comment);
                     Position(comment);
-                    _nextRow = (row + 1) % rows;
                     break;
                 }
             }

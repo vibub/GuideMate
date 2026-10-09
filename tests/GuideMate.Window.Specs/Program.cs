@@ -21,6 +21,11 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        if (args.Length == 2 && args[0] == "--danmaku-layout")
+        {
+            DanmakuLayoutSpecs.Run(args[1]);
+            return;
+        }
         if (args.Length is 2 or 4 && args[0] == "--vision-calibration")
         {
             VisionCalibrationSpecs.Run(args[1], args.Length == 4 ? args[2] : null, args.Length == 4 ? args[3] : null);
