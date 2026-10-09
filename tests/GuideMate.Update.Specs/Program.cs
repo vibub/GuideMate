@@ -22,6 +22,7 @@ internal static class Program
         Directory.CreateDirectory(root);
         try
         {
+            if (args.Length == 2 && args[0] == "--preview") { WindowChecks(root, args[1]); return; }
             if (args.SequenceEqual(new[] { "--live" })) { LiveCheckAsync(root).GetAwaiter().GetResult(); return; }
             if (args.Length == 3 && args[0] == "--package") { PublishedPackageChecks(root, args[1], args[2]); return; }
             VersionChecks(); SettingsChecks(root); NetworkChecksAsync(root).GetAwaiter().GetResult(); PackageChecks(root); WindowChecks(root);
@@ -200,10 +201,12 @@ internal static class Program
         Reject(() => UpdatePackage.Install(overlapping, install, Path.Combine(root, "overlap-backup"), Path.Combine(install, "docs/profile")), "nested active data directory protected");
     }
 
-    private static void WindowChecks(string root)
+    private static void WindowChecks(string root, string? screenshotDirectory = null)
     {
         // Construct controls on STA without showing desktop windows, running app Startup, or opening WebView2.
         var app = new GuideMate.App.App(); app.InitializeComponent();
+        app.Startup -= (StartupEventHandler)Delegate.CreateDelegate(typeof(StartupEventHandler), app,
+            typeof(GuideMate.App.App).GetMethod("OnStartup", BindingFlags.Instance | BindingFlags.NonPublic, null, [typeof(object), typeof(StartupEventArgs)], null)!);
         var before = System.Diagnostics.Process.GetProcessesByName("GuideMate").Select(process => { using (process) return process.Id; }).ToHashSet();
         var type = Assembly.Load("GuideMate.Updater").GetType("GuideMate.Updater.UpdaterWindow")!;
         var window = (Window)Activator.CreateInstance(type, new Dictionary<string, string>(), root)!;
@@ -212,6 +215,7 @@ internal static class Program
         Check(buttons.Length == 2 && buttons[0].Content?.ToString() == "启动随引" && buttons[1].Content?.ToString() == "退出", "completion offers launch and exit");
         var after = System.Diagnostics.Process.GetProcessesByName("GuideMate").Select(process => { using (process) return process.Id; }).ToHashSet();
         Check(!window.IsVisible && before.SetEquals(after), "completion does not launch main app automatically");
+        UpdateDialogChecks.Run(screenshotDirectory);
     }
 
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
