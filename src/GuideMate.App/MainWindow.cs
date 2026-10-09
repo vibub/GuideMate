@@ -91,6 +91,7 @@ public sealed partial class MainWindow : Window
             InitializeTray();
         };
         Loaded += async (_, _) => await InitializeBrowserAsync();
+        Loaded += async (_, _) => await CheckUpdatesAtStartupAsync();
         SizeChanged += (_, _) => { UpdateClip(); UpdateSmallWindowLayout(); if (_onlineProfile != null) { InvalidateOnlineSample(); UpdateDirection(); } };
         LocationChanged += (_, _) => UpdateDanmakuOverlay();
         IsVisibleChanged += (_, _) => { UpdateDanmakuOverlay(); UpdateXRayTracking(); UpdateImmersiveControls(); if (!IsVisible) { InvalidateOnlineSample(); UpdateDirection(); } };
@@ -105,6 +106,7 @@ public sealed partial class MainWindow : Window
         _fadeTimer.Tick += (_, _) => { _fadeTimer.Stop(); _faded = false; ApplyWindowOpacity(); };
         Closing += (_, _) =>
         {
+            _updateLifetime.Cancel();
             CancelWindowResize(); CancelImmersiveDrag();
             CancelEdgeSeek(); StopXRayTracking();
             _closing = true; UpdateImmersiveControls(); _onlineVisionTimer.Stop(); InvalidateOnlineSample(); _saveTimer.Stop(); _fadeTimer.Stop(); UpdateHistory(); SaveSettings();
@@ -566,8 +568,11 @@ public sealed partial class MainWindow : Window
         }
         finally
         {
-            var restoreError = _keys.ResumeOrdinaryBindings();
-            if (restoreError != null) _hotkeyStatus.Text = restoreError + "\n紧急恢复：" + _keys.EmergencyBinding;
+            if (!_closing)
+            {
+                var restoreError = _keys.ResumeOrdinaryBindings();
+                if (restoreError != null) _hotkeyStatus.Text = restoreError + "\n紧急恢复：" + _keys.EmergencyBinding;
+            }
         }
     }
     private void OnHotkey(string action)
@@ -729,6 +734,7 @@ public sealed partial class MainWindow : Window
         var menu = new Forms.ContextMenuStrip();
         menu.Items.Add("恢复窗口", null, (_, _) => Dispatcher.Invoke(EmergencyRestore));
         menu.Items.Add("播放 / 暂停", null, (_, _) => Dispatcher.Invoke(() => Fire(() => CommandAsync("toggle"))));
+        menu.Items.Add("检查更新", null, (_, _) => Dispatcher.Invoke(async () => await CheckForUpdatesAsync()));
         menu.Items.Add("退出", null, (_, _) => Dispatcher.Invoke(Close));
         _tray.ContextMenuStrip = menu;
         _tray.DoubleClick += (_, _) => Dispatcher.Invoke(EmergencyRestore);

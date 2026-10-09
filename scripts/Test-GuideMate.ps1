@@ -11,6 +11,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Chrome host build failed.' }
     & $sdkCommand run --project tests/GuideMate.Specs/GuideMate.Specs.csproj -c Release
     if ($LASTEXITCODE -ne 0) { throw 'Core regression checks failed.' }
+    & $sdkCommand run --project tests/GuideMate.Update.Specs/GuideMate.Update.Specs.csproj -c Release
+    if ($LASTEXITCODE -ne 0) { throw 'Update regression checks failed.' }
     & $sdkCommand run --project tests/GuideMate.Input.Specs/GuideMate.Input.Specs.csproj -c Release
     if ($LASTEXITCODE -ne 0) { throw 'Native input regression checks failed.' }
     node tests/chrome.spec.cjs

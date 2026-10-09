@@ -19,8 +19,15 @@
     <PackageReference Include="Vortice.Direct3D11" Version="3.8.3" />
     <Resource Include="../../assets/branding/guidemate.ico" Link="Assets/guidemate.ico" />
     <ProjectReference Include="../GuideMate.Core/GuideMate.Core.csproj" />
+    <ProjectReference Include="../GuideMate.Updater/GuideMate.Updater.csproj" ReferenceOutputAssembly="false" Private="false" />
     <ProjectReference Include="../GuideMate.Vision/GuideMate.Vision.csproj" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
     <Content Include="../../assets/bridge.js;../../assets/local.html;../../assets/demo.html;../../assets/demo.srt;../../assets/demo.webm" Link="assets/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <Target Name="CopyUpdaterForDevelopment" AfterTargets="Build" Condition="'$(RuntimeIdentifier)' == ''">
+    <ItemGroup>
+      <UpdaterFiles Include="$(MSBuildProjectDirectory)/../GuideMate.Updater/bin/$(Configuration)/$(TargetFramework)/*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(UpdaterFiles)" DestinationFolder="$(OutDir)updater" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

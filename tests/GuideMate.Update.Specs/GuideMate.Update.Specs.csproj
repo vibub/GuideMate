@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/GuideMate.App/GuideMate.App.csproj" />
+    <ProjectReference Include="../../src/GuideMate.Updater/GuideMate.Updater.csproj" />
+  </ItemGroup>
+</Project>

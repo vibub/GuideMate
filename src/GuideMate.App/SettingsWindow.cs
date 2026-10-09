@@ -102,6 +102,17 @@ internal sealed class SettingsWindow : Window
         panel.Children.Add(Ui.Heading("长按触发时间（毫秒）"));
         var holdTime = new TextBox { Text = settings.TemporaryHoldMilliseconds.ToString(System.Globalization.CultureInfo.InvariantCulture) };
         panel.Children.Add(holdTime);
+        panel = Section("软件更新", "更新");
+        panel.Children.Add(Ui.Text("当前版本  " + MainWindow.CurrentVersion, 13));
+        var startupUpdates = Ui.Toggle("启动时检查更新", settings.CheckUpdatesOnStartup, _ => { });
+        System.Windows.Automation.AutomationProperties.SetName(startupUpdates, "启动时检查更新");
+        startupUpdates.Margin = new(0, 12, 0, 8); panel.Children.Add(startupUpdates);
+        panel.Children.Add(Ui.Text("更新源：vibub/GuideMate 的 GitHub Releases。发现新版本时弹窗提醒，确认后下载并覆盖安装，保留现有资料。", 12, Ui.Muted));
+        var checkUpdates = Ui.Command("\uE895", "检查更新", async () =>
+        {
+            await owner.CheckForUpdatesAsync(this);
+        });
+        panel.Children.Add(checkUpdates);
         var save = Ui.Command("\uE74E", "保存设置", () =>
         {
             var restoreError = keys.ResumeOrdinaryBindings();
@@ -113,6 +124,7 @@ internal sealed class SettingsWindow : Window
             var result = apply(fields.ToDictionary(p => p.Key, p => p.Value.Text.Trim()), holdMilliseconds);
             if (result != null) { error.Text = result; return; }
             settings.SeekSeconds = seconds;
+            settings.CheckUpdatesOnStartup = startupUpdates.IsChecked == true;
             settings.TemporaryRate = (double)temporaryRate.SelectedItem;
             settings.FullscreenDanmaku = danmaku.IsChecked == true;
             settings.DanmakuDisplayArea = danmakuArea.Value;

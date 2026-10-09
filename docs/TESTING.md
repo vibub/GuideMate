@@ -8,7 +8,11 @@
 ./scripts/Test-GuideMate.ps1
 ```
 
-控制台入口运行三个独立 .NET Specs 项目和三组零依赖 JavaScript 检查，覆盖字幕、方向规则、设置与资料目录、校准、热键手势、Chrome 合成协议、网页字幕和弹幕提取。视觉检查还需要 PATH 中已有的 FFmpeg 与相邻 ffprobe。
+控制台入口运行四个独立 .NET Specs 项目和三组零依赖 JavaScript 检查，覆盖字幕、方向规则、设置与资料目录、校准、热键手势、Chrome 合成协议、网页字幕、弹幕提取与软件更新。视觉检查还需要 PATH 中已有的 FFmpeg 与相邻 ffprobe。
+
+更新专项可执行 `dotnet run --project tests/GuideMate.Update.Specs/GuideMate.Update.Specs.csproj -c Release`。使用合成 HTTP 和临时 ZIP 验证版本比较、最新及指定标签查询、草稿/预发布排除、下载 SHA256、旧校验文件兼容、取消、ZIP 路径和文件清单校验、文件被占用时回滚、新旧程序文件替换、嵌套资料目录保护及设置/浏览器/视觉缓存逐字节保留。STA 中只构造更新器控件，检查完成后“启动随引”和“退出”两个选项，不显示窗口、不打开 WebView2、不启动正式应用。它不能替代真实网络下载及交互桌面验证。
+
+需要真实网络时可加 `-- --live`，使用生产逻辑下载并校验最新公开 Release，仅解压到临时目录，结束后清理，不执行安装。已有本地 ZIP 可加 `-- --package <ZIP绝对路径> <Release标签>`，在临时目录模拟旧程序并覆盖安装，校验版本、更新器和同目录用户资料保留。
 
 输入专项可单独执行 `dotnet run --project tests/GuideMate.Input.Specs/GuideMate.Input.Specs.csproj -c Release`。它直接编译生产 NativeHotkeys，创建不显示的原生窗口，检查鼠标与键盘 INPUTSINK 注册、Win32 x64 布局、只有原始输入到达时的侧键动作、钩子抑制与动作去重、精确修饰键及左右键、短按/长按、前台切换、录制暂停、配置更改和注销。没有启动正式应用、WebView2 或读取资料目录；合成原始输入与注册检查不能代替物理侧键、真实 WM_INPUT 到达及游戏前台验证。
 
@@ -55,7 +59,9 @@ dotnet run --project tests/GuideMate.Window.Specs/GuideMate.Window.Specs.csproj 
 
 打包使用新的暂存目录，生成 ZIP 与 SHA256 后清理本次暂存目录。WPF 和 Chrome 桥接均依赖系统 .NET 10，采用普通多文件发布，应用及第三方 DLL 与 EXE 分开存放，不包含 .NET 运行库，也不附带 SDK XML 文档。保留中英文资源；框架依赖发布不做程序集裁剪，Chrome 桥接继续使用类型明确的 JSON 元数据。托管与原生库从发布目录加载，不再进行单文件合并、压缩或启动解包。OpenCV 使用同版本官方 Windows Slim 包，保留实际使用的图像处理模块；离线分析继续调用用户已有的 FFmpeg/ffprobe。
 
-更新只替换程序文件，保留 settings.json、WebView2、视觉缓存和正式资料目录。升级旧的多文件版本时，将发布包完整解压到新的程序目录，避免覆盖后残留旧 DLL；程序继续沿用正式资料目录。源码发布也应指定全新输出目录。测量包体积以全新暂存目录生成的 ZIP 为准，不得通过清空整个旧目录来更新软件。
+发布包包含 `updater/GuideMate.Updater.exe` 及其依赖和 `update-manifest.json`。版本号由打包参数传入主程序、桥接与更新器，文件清单记录程序文件而不包含资料。更新只替换程序文件，保留 settings.json、WebView2、视觉缓存和正式资料目录；仅删除上次清单列出且新版不再包含的程序文件，未知文件保留。旧发布包没有清单时只接受已知程序路径并生成清单。手工升级也可将发布包完整解压到新的程序目录，继续沿用正式资料目录。源码发布应指定全新输出目录。测量包体积以全新暂存目录生成的 ZIP 为准，不得通过清空整个旧目录来更新软件。
+
+桌面验收应覆盖默认启动检查、设置取消/保存、托盘手动检查、发现更新弹窗、下载取消/失败、准备就绪后正常保存退出、文件占用、更新器替换自身、完成后退出不启动及明确选择启动继续沿用资料。更新器不会强杀主程序或自动重启；只在用户点击“启动随引”后启动。
 
 无需打开窗口的验证包括发布包文件清单、独立 runtimeconfig 的共享框架声明、DLL 依赖完整性与 Windows GUI apphost 检查。确认包内没有 coreclr、hostfxr、System.Private.CoreLib 或 WPF/.NET 系统运行库。桌面允许测试时，再在隔离环境验证没有 .NET、只有普通 .NET Runtime、装好 Desktop Runtime 三种启动状态，及全屏弹幕下的真实拖动。
 

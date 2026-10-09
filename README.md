@@ -10,12 +10,15 @@ Windows 攻略视频跟随工具。把视频、字幕和方向提示放在顺手
 - **沉浸观看**：鼠标穿透、X 光透明孔、底边进度线和 B 站弹幕。
 - **攻略提示**：同步字幕，或识别原神、终末地攻略视频中的小地图箭头。
 - **资料沿用**：更新程序时继续使用原有设置、窗口偏好和网页登录资料。
+- **软件更新**：默认启动时检查 GitHub Release，也可手动检查；确认后自动下载安装，完成后选择启动或退出。
 
 ## 快速开始
 
 适用于 Windows 10 1809 及以上版本和 Windows 11（x64）。运行需要 [.NET 10 Desktop Runtime（Windows x64）](https://dotnet.microsoft.com/download/dotnet/10.0) 与 [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。
 
 从 [GitHub Releases](https://github.com/vibub/GuideMate/releases) 下载 `GuideMate-版本-win-x64.zip`，完整解压后运行 `Start-GuideMate.cmd` 或 `GuideMate.exe`。不要单独取出 EXE。发布包不含 .NET 运行时或 SDK；缺少所需运行时会显示安装提示。首次启动默认打开 B 站。
+
+在“设置 → 软件更新”或托盘菜单中点击“检查更新”。启动检查默认开启，可在设置中关闭并保存。新版本弹窗显示版本与更新说明；选择“下载并更新”后，独立更新程序完成下载和 SHA256 校验，再等待主程序正常保存退出并覆盖安装。完成后提供“启动随引”和“退出”，不会自动启动。独立更新程序 `updater/GuideMate.Updater.exe` 也支持指定 Release 版本，详见[使用指南](docs/USER_GUIDE.md#软件更新)。
 
 ## 常用热键
 
