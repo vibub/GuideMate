@@ -34,12 +34,12 @@ jobs:
         env:
           RELEASE_VERSION: ${{ github.ref_name }}
         run: ./scripts/Package-GuideMate.ps1 -Version $env:RELEASE_VERSION
-      - name: Create draft with ZIP and SHA256
+      - name: Create draft with ZIP
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           RELEASE_VERSION: ${{ github.ref_name }}
         run: |
-          $assets = Get-ChildItem -LiteralPath ./artifacts/releases -File | ForEach-Object FullName
+          $assets = Get-ChildItem -LiteralPath ./artifacts/releases -Filter '*.zip' -File | ForEach-Object FullName
           gh release create $env:RELEASE_VERSION @assets --verify-tag --draft --generate-notes --title "随引 $env:RELEASE_VERSION"
           if ($LASTEXITCODE -ne 0) { throw 'Creating the release draft failed.' }

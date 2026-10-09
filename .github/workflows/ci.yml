@@ -39,8 +39,6 @@ jobs:
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: GuideMate-win-x64
-          path: |
-            artifacts/releases/*.zip
-            artifacts/releases/*.sha256
+          path: artifacts/releases/*.zip
           if-no-files-found: error
           retention-days: 14

@@ -222,7 +222,7 @@ VideoAnalysis 使用已安装 FFmpeg/ffprobe，以 ArgumentList 传参，不经�
 
 ## 11. 构建、发布与验证
 
-软件更新由 `GitHubReleaseClient`、`ReleaseVersion`、`UpdatePackage` 和独立 WPF 项目 `GuideMate.Updater` 实现。启动开关默认开启，设置保存后生效；后台检查 `vibub/GuideMate` 最新正式 Release，以语义版本比较，并通过设置/托盘提供手动入口。弹窗显示更新说明，用户确认后启动从临时目录运行的更新器。更新器下载指定标签 ZIP，校验 GitHub SHA256 digest 或同名 `.sha256`，验证解压路径及程序文件清单，再通过仅当前用户可访问的命名管道通知主程序保存并正常关闭。等待所有同目录 GuideMate 进程退出后覆盖程序文件，失败时恢复备份，不强制结束进程。只删除旧清单记录的废弃程序文件，保留设置、WebView2、vision、其他未知文件和当前资料目录。完成界面提供“启动随引”和“退出”，显式启动传入原 `--data-dir`；退出后清理本次临时文件，恢复失败时保留备份。
+软件更新由 `GitHubReleaseClient`、`ReleaseVersion`、`UpdatePackage` 和独立 WPF 项目 `GuideMate.Updater` 实现。启动开关默认开启，设置保存后生效；后台检查 `vibub/GuideMate` 最新正式 Release，以语义版本比较，并通过设置/托盘提供手动入口。弹窗显示更新说明，用户确认后启动从临时目录运行的更新器。更新器下载指定标签 ZIP，优先校验 GitHub 自动计算的 SHA256 digest；仅为旧 Release 保留同名 `.sha256` 的回退兼容，新发布不生成或上传该文件。验证解压路径及程序文件清单后，通过仅当前用户可访问的命名管道通知主程序保存并正常关闭。等待所有同目录 GuideMate 进程退出后覆盖程序文件，失败时恢复备份，不强制结束进程。只删除旧清单记录的废弃程序文件，保留设置、WebView2、vision、其他未知文件和当前资料目录。完成界面提供“启动随引”和“退出”，显式启动传入原 `--data-dir`；退出后清理本次临时文件，恢复失败时保留备份。
 
 开发环境：.NET 10 SDK、WebView2 Runtime；NuGet 固定 WebView2、OpenCvSharp4 和 runtime.win.slim 4.13.0.20260627。OpenCV native DLL 随发布包提供；本地分析使用已有 FFmpeg/ffprobe，没有新增系统 SDK。升级后重新验证透明视频绘制与真实图像。脚本优先使用项目 .tools/dotnet/dotnet.exe，找不到时检查系统 SDK。
 

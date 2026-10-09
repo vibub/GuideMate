@@ -57,7 +57,7 @@ dotnet run --project tests/GuideMate.Window.Specs/GuideMate.Window.Specs.csproj 
 ./scripts/Package-GuideMate.ps1 -Version v0.0.0-local
 ```
 
-打包使用新的暂存目录，生成 ZIP 与 SHA256 后清理本次暂存目录。WPF 和 Chrome 桥接均依赖系统 .NET 10，采用普通多文件发布，应用及第三方 DLL 与 EXE 分开存放，不包含 .NET 运行库，也不附带 SDK XML 文档。保留中英文资源；框架依赖发布不做程序集裁剪，Chrome 桥接继续使用类型明确的 JSON 元数据。托管与原生库从发布目录加载，不再进行单文件合并、压缩或启动解包。OpenCV 使用同版本官方 Windows Slim 包，保留实际使用的图像处理模块；离线分析继续调用用户已有的 FFmpeg/ffprobe。
+打包使用新的暂存目录，只生成 ZIP 后清理本次暂存目录，不再生成或上传独立 `.sha256` 文件。上传到 GitHub Release 后，GitHub 自动为 ZIP 资产计算 SHA-256；从 Release API 的资产 `digest` 字段读取 `sha256:<摘要>` 并与下载文件比较。更新器优先使用该摘要，保留旧 Release 的 `.sha256` 文件兼容。CI 也仅上传 ZIP 产物。WPF 和 Chrome 桥接均依赖系统 .NET 10，采用普通多文件发布，应用及第三方 DLL 与 EXE 分开存放，不包含 .NET 运行库，也不附带 SDK XML 文档。保留中英文资源；框架依赖发布不做程序集裁剪，Chrome 桥接继续使用类型明确的 JSON 元数据。托管与原生库从发布目录加载，不再进行单文件合并、压缩或启动解包。OpenCV 使用同版本官方 Windows Slim 包，保留实际使用的图像处理模块；离线分析继续调用用户已有的 FFmpeg/ffprobe。
 
 发布包包含 `updater/GuideMate.Updater.exe` 及其依赖和 `update-manifest.json`。版本号由打包参数传入主程序、桥接与更新器，文件清单记录程序文件而不包含资料。更新只替换程序文件，保留 settings.json、WebView2、视觉缓存和正式资料目录；仅删除上次清单列出且新版不再包含的程序文件，未知文件保留。旧发布包没有清单时只接受已知程序路径并生成清单。手工升级也可将发布包完整解压到新的程序目录，继续沿用正式资料目录。源码发布应指定全新输出目录。测量包体积以全新暂存目录生成的 ZIP 为准，不得通过清空整个旧目录来更新软件。
 
