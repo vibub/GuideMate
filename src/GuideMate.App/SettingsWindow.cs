@@ -102,6 +102,37 @@ internal sealed class SettingsWindow : Window
         panel.Children.Add(Ui.Heading("长按触发时间（毫秒）"));
         var holdTime = new TextBox { Text = settings.TemporaryHoldMilliseconds.ToString(System.Globalization.CultureInfo.InvariantCulture) };
         panel.Children.Add(holdTime);
+        panel = Section("浏览器缓存", "缓存");
+        panel.Children.Add(Ui.Text("清理网页、图片和视频缓存，保留登录状态、保存的密码及网站设置。随引的热键、收藏、进度和窗口偏好不受影响。", 12, Ui.Muted));
+        panel.Children.Add(Ui.Text("清理后部分网页资源需要重新下载；缓存会随继续浏览重新生成。", 12, Ui.Muted));
+        var cacheStatus = Ui.Text(owner.WebViewCacheCleanupStatus, 12, Ui.Muted);
+        cacheStatus.Margin = new(0, 10, 0, 8); panel.Children.Add(cacheStatus);
+        Button clearCache = null!;
+        clearCache = Ui.Command("\uE74D", "立即清理缓存（保留登录）", async () =>
+        {
+            clearCache.IsEnabled = false;
+            cacheStatus.Text = "正在清理缓存…";
+            try { cacheStatus.Text = await owner.ClearWebViewCacheAsync() + "\n" + owner.WebViewCacheCleanupStatus; }
+            finally { clearCache.IsEnabled = true; }
+        });
+        panel.Children.Add(clearCache);
+        var autoCleanCache = Ui.Toggle("定时自动清理缓存", settings.AutoCleanWebViewCache, _ => { });
+        System.Windows.Automation.AutomationProperties.SetName(autoCleanCache, "定时自动清理缓存");
+        autoCleanCache.Margin = new(0, 12, 0, 8); panel.Children.Add(autoCleanCache);
+        panel.Children.Add(Ui.Text("清理周期", 12));
+        var cleanupDays = new[] { 1, 3, 7, 30 };
+        var cacheInterval = new ComboBox { Height = 36, IsEnabled = settings.AutoCleanWebViewCache };
+        foreach (var days in cleanupDays)
+            cacheInterval.Items.Add(new ComboBoxItem { Content = days switch { 1 => "每天", 3 => "每 3 天", 7 => "每周", _ => "每 30 天" }, Tag = days });
+        // Preserve custom values already stored in a profile instead of silently replacing them.
+        if (!cleanupDays.Contains(settings.WebViewCacheCleanupDays))
+            cacheInterval.Items.Add(new ComboBoxItem { Content = $"每 {settings.WebViewCacheCleanupDays} 天", Tag = settings.WebViewCacheCleanupDays });
+        cacheInterval.SelectedItem = cacheInterval.Items.Cast<ComboBoxItem>().Single(item => (int)item.Tag == settings.WebViewCacheCleanupDays);
+        System.Windows.Automation.AutomationProperties.SetName(cacheInterval, "缓存清理周期");
+        autoCleanCache.Checked += (_, _) => cacheInterval.IsEnabled = true;
+        autoCleanCache.Unchecked += (_, _) => cacheInterval.IsEnabled = false;
+        panel.Children.Add(cacheInterval);
+        panel.Children.Add(Ui.Text("自动清理默认关闭，保存后生效。软件运行时到期清理，播放中延后至暂停或空闲；软件关闭期间的到期任务会在下次启动补做。立即清理会直接执行，取消设置不会撤销已清理的缓存。", 12, Ui.Muted));
         panel = Section("软件更新", "更新");
         panel.Children.Add(Ui.Text("当前版本  " + MainWindow.CurrentVersion, 13));
         var startupUpdates = Ui.Toggle("启动时检查更新", settings.CheckUpdatesOnStartup, _ => { });
@@ -125,6 +156,9 @@ internal sealed class SettingsWindow : Window
             if (result != null) { error.Text = result; return; }
             settings.SeekSeconds = seconds;
             settings.CheckUpdatesOnStartup = startupUpdates.IsChecked == true;
+            WebViewCacheSchedule.Configure(settings, autoCleanCache.IsChecked == true,
+                (int)((ComboBoxItem)cacheInterval.SelectedItem).Tag, DateTimeOffset.UtcNow);
+            owner.ApplyWebViewCacheCleanupSettings();
             settings.TemporaryRate = (double)temporaryRate.SelectedItem;
             settings.FullscreenDanmaku = danmaku.IsChecked == true;
             settings.DanmakuDisplayArea = danmakuArea.Value;

@@ -19,6 +19,11 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        if (args.Length == 2 && args[0] == "--browser-cache")
+        {
+            BrowserCacheSpecs.Run(args[1]);
+            return;
+        }
         if (args.Length != 2 || args[0] != "--desktop")
             throw new ArgumentException("Pass --desktop and a new isolated output directory; this check opens temporary desktop windows.");
         var output = Path.GetFullPath(args[1]);

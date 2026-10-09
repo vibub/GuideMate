@@ -61,16 +61,48 @@ internal static class Program
 
     private static void ScheduleCleanup(string work)
     {
-        // Wait for this EXE to unlock before removing only its generated temporary directory.
-        var quoted = work.Replace("'", "''");
-        var script = $"Wait-Process -Id {Environment.ProcessId} -ErrorAction SilentlyContinue; "
-            + $"$updateTemp = [IO.Path]::GetFullPath('{quoted}'); "
-            + "if ([IO.Path]::GetDirectoryName($updateTemp) -eq [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\\') "
-            + "-and [IO.Path]::GetFileName($updateTemp) -match '^GuideMate-update-[0-9a-f]{32}$') { "
-            + "if (Test-Path -LiteralPath $updateTemp) { Remove-Item -LiteralPath $updateTemp -Recurse -Force } }";
-        var start = new ProcessStartInfo("powershell.exe") { UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden };
-        foreach (var arg in new[] { "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", script }) start.ArgumentList.Add(arg);
-        try { Process.Start(start)?.Dispose(); }
-        catch (System.ComponentModel.Win32Exception ex) { Trace.WriteLine("更新暂存清理未启动：" + ex.Message); }
+        try { Process.Start(CreateCleanupStartInfo(work, Environment.ProcessId))?.Dispose(); }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            MessageBox.Show("无法启动临时文件清理：" + ex.Message + "\n剩余临时文件位于：" + work,
+                "随引更新程序", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    internal static ProcessStartInfo CreateCleanupStartInfo(string work, int processId)
+    {
+        ValidateWorkDirectory(work);
+        var quoted = Path.GetFullPath(work).Replace("'", "''");
+        // Show cleanup explicitly and wait for the updater to release its own temporary EXE and DLLs.
+        var script = $$"""
+            $ErrorActionPreference = 'Stop'
+            $updateTemp = [IO.Path]::GetFullPath('{{quoted}}')
+            if (-not [Console]::IsOutputRedirected) { $Host.UI.RawUI.WindowTitle = '随引 - 清理临时文件' }
+            Write-Host '正在清理临时文件，请稍候…' -ForegroundColor Cyan
+            Write-Host ('清理目录：' + $updateTemp)
+            Write-Host '等待更新程序退出…'
+            Wait-Process -Id {{processId}} -ErrorAction SilentlyContinue
+            try {
+                if ([IO.Path]::GetDirectoryName($updateTemp) -ne [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') -or
+                    [IO.Path]::GetFileName($updateTemp) -notmatch '^GuideMate-update-[0-9a-f]{32}$') { throw '更新暂存目录无效。' }
+                if (Test-Path -LiteralPath $updateTemp) {
+                    if ((Get-Item -LiteralPath $updateTemp -Force).Attributes -band [IO.FileAttributes]::ReparsePoint -or
+                        (Get-ChildItem -LiteralPath $updateTemp -Recurse -Force -Attributes ReparsePoint)) { throw '暂存目录中存在链接，已停止清理。' }
+                    Remove-Item -LiteralPath $updateTemp -Recurse -Force
+                }
+                Write-Host '临时文件清理完成，窗口即将关闭。' -ForegroundColor Green
+                Start-Sleep -Seconds 1
+                exit 0
+            } catch {
+                Write-Host ('临时文件清理失败：' + $_.Exception.Message) -ForegroundColor Red
+                Write-Host '剩余临时文件将保留在上述目录。此窗口将在 5 秒后关闭。'
+                Start-Sleep -Seconds 5
+                exit 1
+            }
+            """;
+        var powershell = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe");
+        var start = new ProcessStartInfo(powershell) { UseShellExecute = true, WindowStyle = ProcessWindowStyle.Normal };
+        foreach (var arg in new[] { "-NoLogo", "-NoProfile", "-NonInteractive", "-WindowStyle", "Normal", "-Command", script }) start.ArgumentList.Add(arg);
+        return start;
     }
 }

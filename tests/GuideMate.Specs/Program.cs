@@ -36,6 +36,36 @@ var store = new SettingsStore(temp);
 store.Save(new AppSettings { Rate = 1.5, Bookmarks = [new() { Url = "https://example.com", Position = 12 }] });
 var loaded = store.Load();
 Check(loaded.Rate == 1.5 && loaded.Bookmarks[0].Position == 12, "settings roundtrip");
+Check(!loaded.AutoCleanWebViewCache && loaded.WebViewCacheCleanupDays == 7
+    && loaded.LastWebViewCacheCleanupUtc == null && loaded.NextWebViewCacheCleanupUtc == null,
+    "old profiles keep automatic browser cleanup off with weekly default");
+var cacheNow = new DateTimeOffset(2026, 10, 9, 0, 0, 0, TimeSpan.Zero);
+WebViewCacheSchedule.Configure(loaded, true, 3, cacheNow);
+store.Save(loaded);
+var cacheReload = store.Load();
+Check(cacheReload.AutoCleanWebViewCache && cacheReload.WebViewCacheCleanupDays == 3
+    && cacheReload.NextWebViewCacheCleanupUtc == cacheNow.AddDays(3), "cache schedule persists across restart");
+Check(!WebViewCacheSchedule.IsDue(cacheReload, cacheNow.AddDays(3).AddSeconds(-1))
+    && WebViewCacheSchedule.IsDue(cacheReload, cacheNow.AddDays(3))
+    && WebViewCacheSchedule.IsDue(cacheReload, cacheNow.AddDays(8)), "cache cleanup runs at deadline and catches missed startup deadlines");
+WebViewCacheSchedule.Configure(cacheReload, true, 3, cacheNow.AddDays(1));
+Check(cacheReload.NextWebViewCacheCleanupUtc == cacheNow.AddDays(3), "unrelated saves do not postpone automatic cleanup");
+WebViewCacheSchedule.Completed(cacheReload, cacheNow.AddDays(4));
+Check(cacheReload.LastWebViewCacheCleanupUtc == cacheNow.AddDays(4)
+    && cacheReload.NextWebViewCacheCleanupUtc == cacheNow.AddDays(7), "successful manual or automatic cleanup schedules next cycle");
+WebViewCacheSchedule.Configure(cacheReload, true, 1, cacheNow.AddDays(5));
+Check(cacheReload.NextWebViewCacheCleanupUtc == cacheNow.AddDays(6), "changing cleanup interval starts the new cycle on save");
+WebViewCacheSchedule.Configure(cacheReload, false, 1, cacheNow.AddDays(5));
+Check(cacheReload.NextWebViewCacheCleanupUtc == null && !WebViewCacheSchedule.IsDue(cacheReload, cacheNow.AddDays(50))
+    && cacheReload.LastWebViewCacheCleanupUtc == cacheNow.AddDays(4), "disabling automatic cleanup retains last successful result");
+store.Save(cacheReload);
+Check(store.Load().Bookmarks[0].Position == 12 && store.Load().Rate == 1.5,
+    "cache preferences preserve video library and playback settings");
+File.WriteAllText(Path.Combine(temp, "settings.json"), "{\"WebViewCacheCleanupDays\":0}");
+Check(store.Load().WebViewCacheCleanupDays == 1, "cache interval rejects zero and negative values on load");
+File.WriteAllText(Path.Combine(temp, "settings.json"), "{\"WebViewCacheCleanupDays\":999}");
+Check(store.Load().WebViewCacheCleanupDays == 30, "cache interval normalizes corrupt large values on load");
+store.Save(loaded);
 Check(loaded.FullscreenDanmaku, "existing profiles enable fullscreen danmaku by default");
 Check(loaded.HideImmersiveFromAltTab, "new profiles hide immersive windows from Alt+Tab by default");
 loaded.HideImmersiveFromAltTab = false; store.Save(loaded);

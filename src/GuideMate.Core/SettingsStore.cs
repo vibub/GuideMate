@@ -14,6 +14,7 @@ public sealed class SettingsStore(string directory)
         try
         {
             var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(_path), _options) ?? new();
+            settings.WebViewCacheCleanupDays = Math.Clamp(settings.WebViewCacheCleanupDays, 1, 30);
             if (settings.ImmersiveBounds is { IsValid: false }) settings.ImmersiveBounds = null;
             settings.OverlayWidth = double.IsFinite(settings.OverlayWidth) ? Math.Max(260, settings.OverlayWidth) : 520;
             settings.OverlayLeft = double.IsFinite(settings.OverlayLeft) ? settings.OverlayLeft : 140;

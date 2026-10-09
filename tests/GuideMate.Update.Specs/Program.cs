@@ -25,7 +25,7 @@ internal static class Program
             if (args.Length == 2 && args[0] == "--preview") { WindowChecks(root, args[1]); return; }
             if (args.SequenceEqual(new[] { "--live" })) { LiveCheckAsync(root).GetAwaiter().GetResult(); return; }
             if (args.Length == 3 && args[0] == "--package") { PublishedPackageChecks(root, args[1], args[2]); return; }
-            VersionChecks(); SettingsChecks(root); NetworkChecksAsync(root).GetAwaiter().GetResult(); PackageChecks(root); WindowChecks(root);
+            VersionChecks(); SettingsChecks(root); NetworkChecksAsync(root).GetAwaiter().GetResult(); PackageChecks(root); WindowChecks(root); CleanupChecks.Run(root);
             Console.WriteLine($"Update checks passed: {_checks}");
         }
         finally { Directory.Delete(root, true); }

@@ -20,6 +20,16 @@
 
 历史上编进正式应用的桌面冒烟方法、在线探针及专用夹具已移除。正式程序不再携带测试代码；侧栏的离线演示仍保留。CI 执行核心回归并在全新目录打包，不读取本机账号或私有录像。
 
+## 浏览器缓存专项
+
+核心回归覆盖旧资料默认关闭、周期读写、到期边界、未运行期间的到期任务、无关保存不延后清理、更改周期和关闭功能。真实 WebView2 Runtime 验证须在交互桌面使用全新隔离目录：
+
+```powershell
+dotnet run --project tests/GuideMate.Window.Specs/GuideMate.Window.Specs.csproj -c Release -- --browser-cache D:\Develop\GuideMate\artifacts\cache-check-new
+```
+
+该检查使用本机 HTTP 测试服务及合成 HttpOnly Cookie、LocalStorage、IndexedDB 登录令牌，生成 HTTP 磁盘缓存与 CacheStorage，调用生产清理入口，检查资源重新下载、缓存移除与登录数据保留，并验证设置取消/保存、播放期间延后、到期自动清理及重启保留。截图展示实际 WPF 设置界面。它不读取或清理正式资料，也不能作为真实 B 站账号登录验收。检查结束正常关闭临时窗口，核实测试进程已退出后清理输出目录。
+
 ## 隔离桌面检查
 
 需要交互桌面与 WebView2 Runtime。`--isolated` 使用独立配置，不读取或更新正式资料目录选择，也不启动 Chrome 配对服务。未指定目录时创建新的临时目录。它用于人工检查，不自动执行冒烟或退出：

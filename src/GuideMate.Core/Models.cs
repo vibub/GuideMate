@@ -25,6 +25,10 @@ public sealed record WindowPlacement(double Left, double Top, double Width, doub
 public class AppSettings
 {
     public bool CheckUpdatesOnStartup { get; set; } = true;
+    public bool AutoCleanWebViewCache { get; set; }
+    public int WebViewCacheCleanupDays { get; set; } = 7;
+    public DateTimeOffset? LastWebViewCacheCleanupUtc { get; set; }
+    public DateTimeOffset? NextWebViewCacheCleanupUtc { get; set; }
     public double Left { get; set; } = 120;
     public double Top { get; set; } = 80;
     public double Width { get; set; } = 1160;

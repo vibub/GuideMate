@@ -104,9 +104,11 @@ public sealed partial class MainWindow : Window
         };
         _saveTimer.Tick += (_, _) => { UpdateHistory(); SaveSettings(); };
         _fadeTimer.Tick += (_, _) => { _fadeTimer.Stop(); _faded = false; ApplyWindowOpacity(); };
+        _webViewCacheTimer.Tick += async (_, _) => await TryAutoCleanWebViewCacheAsync();
         Closing += (_, _) =>
         {
             _updateLifetime.Cancel();
+            _webViewCacheTimer.Stop();
             CancelWindowResize(); CancelImmersiveDrag();
             CancelEdgeSeek(); StopXRayTracking();
             _closing = true; UpdateImmersiveControls(); _onlineVisionTimer.Stop(); InvalidateOnlineSample(); _saveTimer.Stop(); _fadeTimer.Stop(); UpdateHistory(); SaveSettings();
@@ -340,6 +342,11 @@ public sealed partial class MainWindow : Window
             core.NewWindowRequested += (_, e) => { e.Handled = true; Navigate(e.Uri); };
             await core.AddScriptToExecuteOnDocumentCreatedAsync(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "assets", "bridge.js")));
             if (!_isolated) StartChromeBridge();
+            WebViewCacheSchedule.Configure(_settings, _settings.AutoCleanWebViewCache,
+                _settings.WebViewCacheCleanupDays, DateTimeOffset.UtcNow);
+            ApplyWebViewCacheCleanupSettings();
+            await TryAutoCleanWebViewCacheAsync();
+            if (_closing) return;
             _saveTimer.Start(); UpdateOverlay();
             if (_initialMedia != null) NavigateMedia(_initialMedia);
             else Navigate("https://www.bilibili.com/");
