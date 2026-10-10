@@ -390,7 +390,8 @@ public sealed partial class MainWindow : Window
             if (_mediaKey.Length > 0 && mediaKey != _mediaKey)
             {
                 ResetVideoAspectRatio(); ResetDanmaku();
-                _keys?.CancelTemporaryRate(); Fire(EndTemporaryRateAsync);
+                var episodeRate = _settings.Rate;
+                Fire(() => SetRateAsync(episodeRate));
                 _cues = []; _combatEvents.Clear(); _lastCaption = ""; _subtitleSource.Text = "网页字幕"; _notice = "";
                 LoadVisualTrack();
             }
@@ -466,7 +467,7 @@ public sealed partial class MainWindow : Window
     {
         if (_temporaryRateActive || _duration <= 0) return false;
         _temporaryRestoreRate = _settings.Rate; _temporaryRateActive = true;
-        return await CommandAsync("rate", _settings.TemporaryRate);
+        return await CommandAsync("temporaryRate", _settings.TemporaryRate);
     }
     private Task EndTemporaryRateAsync() => EndTemporaryRateAsync(false);
     private async Task EndTemporaryRateAsync(bool feedback)

@@ -1,7 +1,11 @@
 (() => {
   if (window.guideMate) return;
   let preferredRate = null;
+  let temporaryRate = null;
   let target = null;
+  let targetMediaKey = '';
+  let ratePending = false;
+  let rateFirstPlay = false;
   let focusEnabled = false;
   let focusedControls = null;
   let controlsTimer = null;
@@ -19,6 +23,27 @@
   };
   const visibleVideo = () => [...document.querySelectorAll('video')]
     .filter(video => area(video) > 400).sort((a, b) => area(b) - area(a))[0];
+  const applyRate = video => {
+    if (preferredRate !== null && video.defaultPlaybackRate !== preferredRate) video.defaultPlaybackRate = preferredRate;
+    const rate = temporaryRate ?? preferredRate;
+    if (rate !== null && video.playbackRate !== rate) video.playbackRate = rate;
+  };
+  const rateLoading = event => {
+    if (event.type === 'playing') {
+      if (!rateFirstPlay) return;
+      rateFirstPlay = false;
+    } else {
+      if (event.type === 'loadstart') temporaryRate = null;
+      rateFirstPlay = true;
+    }
+    ratePending = true; applyRate(target);
+  };
+  const rateEvents = ['loadstart', 'loadedmetadata', 'playing'];
+  const watchVideoRate = video => {
+    for (const event of rateEvents) target?.removeEventListener(event, rateLoading);
+    target = video;
+    for (const event of rateEvents) target?.addEventListener(event, rateLoading);
+  };
   const finite = value => Number.isFinite(value) ? value : 0;
   const viewport = () => window === window.top
     ? {x:0, y:0, sx:1, sy:1, width:innerWidth, height:innerHeight} : frameViewport;
@@ -305,7 +330,8 @@
         case 'toggle': if (video.paused) video.play().catch(error => post({ type: 'error', message: error.message })); else video.pause(); break;
         case 'seek': video.currentTime = Math.max(0, Math.min(finite(video.duration) || Number.MAX_SAFE_INTEGER, video.currentTime + value)); break;
         case 'position': video.currentTime = Math.max(0, Math.min(finite(video.duration) || Number.MAX_SAFE_INTEGER, value)); break;
-        case 'rate': preferredRate = Math.max(0.25, Math.min(4, value)); video.playbackRate = preferredRate; break;
+        case 'rate': preferredRate = Math.max(0.25, Math.min(4, value)); temporaryRate = null; applyRate(video); break;
+        case 'temporaryRate': temporaryRate = Math.max(0.25, Math.min(4, value)); applyRate(video); break;
         case 'volume': video.volume = Math.max(0, Math.min(1, value)); break;
         case 'mute': video.muted = !video.muted; break;
         case 'focus': return setFocus(!focusEnabled);
@@ -319,14 +345,25 @@
   setInterval(() => {
     if (window !== window.top) parent.postMessage({kind:'guidemate-frame-query', token:frameToken, width:innerWidth, height:innerHeight}, '*');
     const video = visibleVideo();
-    if (!video) { target = null; restoreControls(); post({type:'no-video'}); return; }
-    if (target !== video) {
-      target = video;
-      if (preferredRate !== null) video.playbackRate = preferredRate;
+    if (!video) { watchVideoRate(null); targetMediaKey = ''; restoreControls(); post({type:'no-video'}); return; }
+    const mediaKey = location.href + '|' + video.currentSrc;
+    if (target !== video || targetMediaKey !== mediaKey) {
+      watchVideoRate(video); targetMediaKey = mediaKey;
+      temporaryRate = null; ratePending = true;
+      rateFirstPlay = video.paused || video.readyState < 3;
       if (focusEnabled) setFocus(true);
     }
+    // Media loads can reuse the element and reset its speed after metadata.
+    // Restore through the first playable state, then accept website changes.
+    if (ratePending) {
+      applyRate(video);
+      ratePending = video.readyState < 3;
+    } else if (temporaryRate === null && preferredRate !== null) {
+      preferredRate = video.playbackRate;
+      if (video.defaultPlaybackRate !== preferredRate) video.defaultPlaybackRate = preferredRate;
+    }
     enableChineseSubtitle(video);
-    post({ type: 'state', area:area(video), mediaKey:location.href + '|' + video.currentSrc, time: finite(video.currentTime), duration: finite(video.duration), paused: video.paused,
+    post({ type: 'state', area:area(video), mediaKey, time: finite(video.currentTime), duration: finite(video.duration), paused: video.paused,
       rate: video.playbackRate, volume: video.volume, muted: video.muted, subtitle: subtitle(video), danmaku:danmaku(video),
       width:video.videoWidth, height:video.videoHeight, seeking:video.seeking });
   }, 250);

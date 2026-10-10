@@ -74,7 +74,8 @@ const document = {
 };
 const video = new Element('', [], 'VIDEO');
 Object.assign(video, {textTracks: [], currentTime: 159, currentSrc: 'blob:synthetic-video',
-  duration: 224, paused: true, playbackRate: 1, volume: 1, muted: false, seeking: false, controls: false});
+  duration: 224, paused: true, playbackRate: 1, volume: 1, muted: false, seeking: false, controls: false,
+  addEventListener() {}, removeEventListener() {}});
 const player = body.append(new Element('bpx-player-container', [video]));
 let tick, state;
 const window = {chrome: {webview: {postMessage: message => {state = message;}}},

@@ -17,6 +17,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Native input regression checks failed.' }
     node tests/chrome.spec.cjs
     if ($LASTEXITCODE -ne 0) { throw 'Chrome extension checks failed.' }
+    node tests/bridge-rate.spec.cjs
+    if ($LASTEXITCODE -ne 0) { throw 'Playback rate bridge checks failed.' }
     node tests/bridge-subtitles.spec.cjs
     if ($LASTEXITCODE -ne 0) { throw 'Subtitle bridge checks failed.' }
     node tests/bridge-danmaku.spec.cjs

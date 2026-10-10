@@ -85,6 +85,8 @@ dotnet run --project tests/GuideMate.Window.Specs/GuideMate.Window.Specs.csproj 
 
 `node tests/bridge-subtitles.spec.cjs` 覆盖进入视频默认开启中文、普通中文优先于 AI、延迟加载、沉浸隐藏菜单、手动关闭与语言更改、清晰度及来源参数变化、无中文、登录受限、禁用语言项、副字幕隔离、限定站点和有限重试，以及原生 HTML5 中文字幕轨道。真实 B 站还须检查登录后进入视频、手动关闭本集字幕、沉浸下一集及上一集：核对主字幕中文选中、关闭项取消选中、网址 p 参数和实际媒体变化，并观察桥接收到新集的真实台词。默认使用独立资料；只有用户明确授权时才可使用其已有登录资料，不能导出 Cookie 或覆盖正式设置。
 
+`node tests/bridge-rate.spec.cjs` 覆盖复用视频元素切集、加载和元数据阶段重置倍速、首次可播放状态恢复、替换视频元素、临时倍速取消以及播放稳定后的网页手动改速。`dotnet run --project tests/GuideMate.Window.Specs -c Release -- --playback-rate <新的隔离目录>` 使用真实 WPF / WebView2 与本地媒体验证沉浸下切换来源、延迟重置倍速、临时倍速释放及跨集取消、整页导航、倍速显示同步和资料保存。以上是离线模型和本地媒体验收；真实 B 站还须核对切集后的实际 video.playbackRate，不能只看网站倍速按钮，也不能把这些结果当作真实网站或物理热键验收。
+
 真实 Chrome 注册、配对和导入需要用户明确授权。合成 Cookie 不代表真实账号同步。截图与日志不得包含账号、Cookie 或配对码。
 
 ## 发布包

@@ -21,6 +21,11 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        if (args.Length == 2 && args[0] == "--playback-rate")
+        {
+            PlaybackRateSpecs.Run(args[1]);
+            return;
+        }
         if (args.Length == 2 && args[0] == "--danmaku-layout")
         {
             DanmakuLayoutSpecs.Run(args[1]);
