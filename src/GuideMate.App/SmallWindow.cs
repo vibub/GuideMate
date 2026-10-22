@@ -77,6 +77,13 @@ public sealed partial class MainWindow
     private void ApplyWindowSwitcher() =>
         NativeHotkeys.HideFromWindowSwitcher(this, _immersive && _settings.HideImmersiveFromAltTab);
 
+    private void AdjustImmersiveTransparency(double change, int feedbackVersion)
+    {
+        _settings.ImmersiveOpacity = Math.Clamp(Math.Round(_settings.GetImmersiveOpacity() - change, 2), 0.2, 1);
+        ApplyWindowOpacity(); SaveSettings();
+        ShowHotkeyFeedback($"小窗透明度 {1 - _settings.GetImmersiveOpacity():P0}", feedbackVersion);
+    }
+
     private void ApplyWindowOpacity()
     {
         var opacity = _immersive ? _settings.GetImmersiveOpacity() : _settings.Opacity;

@@ -207,6 +207,43 @@ Check(roundtrip is { Success: true, Imported: 1 }, "native messaging length fram
 using var oversized = new MemoryStream([1, 0, 16, 0]);
 var sizeRejected = false; try { await ChromeBridge.ReadAsync(oversized); } catch (FormatException) { sizeRejected = true; }
 Check(sizeRejected, "reject oversized native messages before allocation");
+var defaults = AppSettings.DefaultHotkeys();
+Check(defaults["ImmersiveTransparencyUp"] == "Ctrl+Alt+Shift+Up"
+    && defaults["ImmersiveTransparencyDown"] == "Ctrl+Alt+Shift+Down"
+    && defaults["SubtitleOverlay"] == "Ctrl+Alt+F", "appearance hotkeys use the requested defaults");
+Check(defaults["RateUp"] == "Ctrl+Alt+Up" && defaults["RateDown"] == "Ctrl+Alt+Down"
+    && defaults.Values.Distinct(StringComparer.OrdinalIgnoreCase).Count() == defaults.Count,
+    "new appearance defaults retain speed shortcuts and introduce no conflicts");
+var legacyKeys = new Dictionary<string, string>(defaults);
+foreach (var action in new[] { "ImmersiveTransparencyUp", "ImmersiveTransparencyDown", "SubtitleOverlay" }) legacyKeys.Remove(action);
+legacyKeys["SeekForward"] = "Mouse5";
+store.Save(new AppSettings { Hotkeys = legacyKeys, Opacity = 0.65,
+    Bookmarks = [new() { Url = "https://example.test/appearance", Position = 42 }] });
+var appearanceMigration = store.Load();
+Check(legacyKeys.All(pair => appearanceMigration.Hotkeys[pair.Key] == pair.Value)
+    && appearanceMigration.Hotkeys["ImmersiveTransparencyUp"] == defaults["ImmersiveTransparencyUp"]
+    && appearanceMigration.Hotkeys["ImmersiveTransparencyDown"] == defaults["ImmersiveTransparencyDown"]
+    && appearanceMigration.Hotkeys["SubtitleOverlay"] == defaults["SubtitleOverlay"],
+    "legacy profiles gain all three appearance shortcuts without changing any existing binding");
+Check(appearanceMigration.GetImmersiveOpacity() == 0.65 && appearanceMigration.Bookmarks.Single().Position == 42,
+    "hotkey migration preserves legacy opacity and saved playback positions");
+legacyKeys["PlayPause"] = defaults["ImmersiveTransparencyUp"];
+legacyKeys["SeekBack"] = defaults["ImmersiveTransparencyDown"];
+legacyKeys["Hide"] = defaults["SubtitleOverlay"];
+store.Save(new AppSettings { Hotkeys = legacyKeys });
+var appearanceCollision = store.Load();
+Check(legacyKeys.All(pair => appearanceCollision.Hotkeys[pair.Key] == pair.Value)
+    && appearanceCollision.Hotkeys.Values.Distinct(StringComparer.OrdinalIgnoreCase).Count() == appearanceCollision.Hotkeys.Count,
+    "occupied appearance defaults choose free fallbacks while preserving every existing custom binding");
+appearanceCollision.Hotkeys["ImmersiveTransparencyUp"] = "Alt+Mouse4";
+appearanceCollision.Hotkeys["ImmersiveTransparencyDown"] = "Alt+Mouse5";
+appearanceCollision.Hotkeys["SubtitleOverlay"] = "Ctrl+Shift+F";
+store.Save(appearanceCollision);
+var appearanceReload = store.Load();
+Check(appearanceReload.Hotkeys["ImmersiveTransparencyUp"] == "Alt+Mouse4"
+    && appearanceReload.Hotkeys["ImmersiveTransparencyDown"] == "Alt+Mouse5"
+    && appearanceReload.Hotkeys["SubtitleOverlay"] == "Ctrl+Shift+F",
+    "custom appearance shortcuts persist across settings reloads");
 var oldDir = Path.Combine(Path.GetTempPath(), "GuideMate-migration-" + Guid.NewGuid());
 Directory.CreateDirectory(oldDir);
 File.WriteAllText(Path.Combine(oldDir, "settings.json"), "{\"Hotkeys\":{\"PlayPause\":\"Ctrl+Alt+Shift+K\"},\"Rate\":1.5}");

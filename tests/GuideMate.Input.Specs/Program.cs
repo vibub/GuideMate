@@ -18,6 +18,13 @@ internal static class Program
         keys.TemporaryRateReleased += () => releases++;
         try
         {
+            Apply(GuideMate.Core.AppSettings.DefaultHotkeys());
+            var appearanceActions = new[] { "ImmersiveTransparencyUp", "ImmersiveTransparencyDown", "SubtitleOverlay", "RateUp", "RateDown" };
+            foreach (var action in appearanceActions)
+                keys.ProcessKeyboardPress(NativeHotkeys.Parse(GuideMate.Core.AppSettings.DefaultHotkeys()[action]), (nint)123, 500);
+            Drain();
+            Check(actions.SequenceEqual(appearanceActions), "registered appearance shortcuts dispatch independently of existing speed shortcuts");
+            actions.Clear();
             Check(Marshal.SizeOf<NativeHotkeys.RawInputHeader>() == 24
                 && Marshal.SizeOf<NativeHotkeys.RawInput>() == 48
                 && Marshal.OffsetOf<NativeHotkeys.RawInput>("Data").ToInt32() == 24,

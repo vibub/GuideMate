@@ -106,3 +106,15 @@ dotnet run --project tests/GuideMate.Window.Specs/GuideMate.Window.Specs.csproj 
 多文件发布后，用隔离目录检查 WebView2 本地视频加载、OpenCV 校准预览、Chrome 合成协议及全屏弹幕子进程启动/退出。资源路径使用 `AppContext.BaseDirectory`，同程序子进程使用 `Environment.ProcessPath`，完整复制发布目录，不单独复制 EXE。
 
 旧 `--smoke-test` 参数继续作为隔离模式兼容入口，避免旧测试命令访问正式资料；它不再自动执行检查或退出。
+
+## 网站历史进度与外观热键专项
+
+需要交互桌面和全新临时输出目录：
+
+```powershell
+dotnet run --project tests/GuideMate.Window.Specs/GuideMate.Window.Specs.csproj -c Release -- --playback-resume <全新输出目录>
+```
+
+使用独立资料和本地网页中的真实 HTML5 视频，在加载元数据时模拟网站历史恢复，并记录随引实际发送的命令。检查地址导航、页内导航、延迟恢复、iframe 播放器不被跳到零；显式收藏/历史恢复（包括零位置）和刷新仍恢复对应位置，常驻倍速继续生效。测试还向正式动作入口分发新增热键，检查真实窗口透明度的方向和上下限、普通窗口不透明度独立、字幕浮窗开关与隐藏恢复、保存和重新读取，以及自定义侧键和收藏保留。核心回归覆盖默认键、旧资料补齐和冲突备用键；输入专项覆盖全局注册及动作分发。
+
+这是隔离 WebView2 与模拟热键动作验证，不代表已登录 B 站账号的真实历史记录、物理按键或游戏前台实测。测试结束会关闭窗口，完成后清理本次临时目录。

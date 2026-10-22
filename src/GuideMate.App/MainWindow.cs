@@ -326,8 +326,9 @@ public sealed partial class MainWindow : Window
                 _keys?.CancelTemporaryRate();
                 _temporaryRateActive = false; _temporaryRestoreRate = null; _mediaKey = "";
                 var samePage = e.Uri == _url;
-                if (!_navigationRequested) _resume = samePage ? CurrentVideo() : new SavedVideo { Rate = _settings.Rate };
+                if (!_navigationRequested) _resume = samePage && _duration > 0 ? CurrentVideo() : null;
                 _navigationRequested = false; _resumeApplied = false;
+                _temporaryRestoreRate = _resume?.Rate ?? _settings.Rate;
                 if (!samePage) { _cues = []; _combatEvents.Clear(); _subtitleSource.Text = "网页字幕"; }
                 _position = 0; _duration = 0; _paused = true;
                 CancelEdgeSeek(); UpdateEdgeProgress();
@@ -412,10 +413,18 @@ public sealed partial class MainWindow : Window
             _syncing = false;
             _clock.Text = FormatTime(_position) + " / " + FormatTime(_duration);
             UpdateEdgeProgress();
-            if (!_resumeApplied && _resume != null && _duration > 0)
+            if (!_resumeApplied && _duration > 0)
             {
                 _resumeApplied = true;
-                Fire(async () => { await CommandAsync("position", _resume.Position); await SetRateAsync(_resume.Rate); });
+                var resume = _resume;
+                _resume = null;
+                var resumeRate = resume?.Rate ?? _temporaryRestoreRate ?? _settings.Rate;
+                Fire(async () =>
+                {
+                    // Ordinary navigation leaves website history in control of the playback position.
+                    if (resume != null) await CommandAsync("position", resume.Position);
+                    await SetRateAsync(resumeRate);
+                });
             }
             var caption = _cues.Count > 0 ? Subtitles.At(_cues, _position, _settings.SubtitleOffset)
                 : root.TryGetProperty("subtitle", out var subtitle) ? subtitle.GetString() ?? "" : "";
@@ -496,7 +505,7 @@ public sealed partial class MainWindow : Window
         if (_browser.CoreWebView2 == null) return;
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
         { _status.Text = "请输入有效的 http/https 地址。"; return; }
-        _resume = resume ?? new SavedVideo { Rate = _settings.Rate };
+        _resume = resume;
         ResetDanmaku(); ResetOnlineVision(); UpdateDirection();
         if (!uri.AbsoluteUri.StartsWith("https://guidemate.local/local.html", StringComparison.OrdinalIgnoreCase)) _pendingLocalFile = null;
         _resumeApplied = false;
@@ -604,6 +613,13 @@ public sealed partial class MainWindow : Window
             case "SeekForward": Fire(() => VideoHotkeyAsync("seek", _settings.SeekSeconds, "快进" + FeedbackNumber(_settings.SeekSeconds) + "s", version)); break;
             case "RateUp": Fire(() => RateHotkeyAsync(_settings.Rate + 0.25, version)); break;
             case "RateDown": Fire(() => RateHotkeyAsync(_settings.Rate - 0.25, version)); break;
+            case "ImmersiveTransparencyUp": AdjustImmersiveTransparency(0.05, version); break;
+            case "ImmersiveTransparencyDown": AdjustImmersiveTransparency(-0.05, version); break;
+            case "SubtitleOverlay":
+                _overlayToggle.IsChecked = !_settings.SubtitleOverlay;
+                SaveSettings();
+                ShowHotkeyFeedback(_settings.SubtitleOverlay ? "字幕浮窗：开" : "字幕浮窗：关", version);
+                break;
             case "TemporaryRate": Fire(() => TemporaryRateHotkeyAsync(version)); break;
             case "PreviousEpisode": Fire(() => VideoHotkeyAsync("previousEpisode", null, "上一集", version)); break;
             case "NextEpisode": Fire(() => VideoHotkeyAsync("nextEpisode", null, "下一集", version)); break;

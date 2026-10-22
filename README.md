@@ -27,6 +27,8 @@ Windows 攻略视频跟随工具。把视频、字幕和方向提示放在顺手
 | `Ctrl+Alt+Space` | 播放 / 暂停 |
 | `Ctrl+Alt+Left / Right` | 后退 / 快进 |
 | `Ctrl+Alt+Up / Down` | 调整倍速 |
+| `Ctrl+Alt+Shift+Up / Down` | 提高 / 降低小窗透明度 |
+| `Ctrl+Alt+F` | 字幕浮窗开关 |
 | `Ctrl+Alt+Shift+V` | 按住临时倍速 |
 | `Ctrl+Alt+PageUp / PageDown` | 上一集 / 下一集 |
 | `Ctrl+Alt+Shift+I` | 沉浸模式 |
