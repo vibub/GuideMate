@@ -101,14 +101,14 @@ public sealed partial class MainWindow : Window
         Loaded += async (_, _) => await InitializeBrowserAsync();
         Loaded += async (_, _) => await CheckUpdatesAtStartupAsync();
         SizeChanged += (_, _) => { UpdateSmallWindowLayout(); if (_onlineProfile != null) { InvalidateOnlineSample(); UpdateDirection(); } };
-        LocationChanged += (_, _) => UpdateDanmakuOverlay();
-        IsVisibleChanged += (_, _) => { UpdateDanmakuOverlay(); UpdateXRayTracking(); UpdateImmersiveControls(); if (!IsVisible) { InvalidateOnlineSample(); UpdateDirection(); } };
+        LocationChanged += (_, _) => { UpdateDanmakuOverlay(); SyncControlLayer(); };
+        IsVisibleChanged += (_, _) => { UpdateDanmakuOverlay(); UpdateXRayTracking(); UpdateImmersiveControls(); SyncControlLayer(); if (!IsVisible) { InvalidateOnlineSample(); UpdateDirection(); } };
         StateChanged += (_, _) =>
         {
             if (WindowState == WindowState.Minimized) { CancelImmersiveDrag(); InvalidateOnlineSample(); UpdateDirection(); }
             else _restoreWindowState = WindowState;
             CancelEdgeSeek(); UpdateXRayTracking();
-            UpdateOverlay(); UpdateDanmakuOverlay(); UpdateImmersiveControls();
+            UpdateOverlay(); UpdateDanmakuOverlay(); UpdateImmersiveControls(); SyncControlLayer();
         };
         _saveTimer.Tick += (_, _) => { UpdateHistory(); SaveSettings(); };
         _fadeTimer.Tick += (_, _) => { _fadeTimer.Stop(); _faded = false; ApplyWindowOpacity(); };
@@ -122,6 +122,7 @@ public sealed partial class MainWindow : Window
             CancelEdgeSeek(); StopXRayTracking();
             _closing = true; UpdateImmersiveControls(); _onlineVisionTimer.Stop(); InvalidateOnlineSample(); _saveTimer.Stop(); _fadeTimer.Stop(); UpdateHistory(); SaveSettings();
             _chromeServer?.Dispose();
+            _controlLayer?.Close(); _controlLayer = null;
             _keys?.Dispose(); _tray?.Icon?.Dispose(); _tray?.Dispose(); _overlay?.Close(); _danmakuOverlay?.Dispose(); _browser.Dispose();
         };
     }
@@ -641,6 +642,7 @@ public sealed partial class MainWindow : Window
         CancelWindowResize(); CancelImmersiveDrag(); CancelEdgeSeek();
         _through = _immersive && _settings.ClickThrough && CanEnableClickThrough;
         NativeHotkeys.ClickThrough(this, _through);
+        UpdateControlLayer();
         _overlay?.SetClickThrough(_through);
         if (_throughToggle.IsChecked != _settings.ClickThrough) _throughToggle.IsChecked = _settings.ClickThrough;
         _xrayToggle.IsEnabled = _settings.ClickThrough && CanEnableClickThrough;

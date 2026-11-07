@@ -17,14 +17,6 @@ public sealed partial class MainWindow
 
     private void BuildWindowResizeControls()
     {
-        AddResizeGrip(ResizeEdges.Left, HorizontalAlignment.Left, VerticalAlignment.Stretch,
-            6, double.NaN, Cursors.SizeWE, "左边", new(0, 18, 0, 18));
-        AddResizeGrip(ResizeEdges.Right, HorizontalAlignment.Right, VerticalAlignment.Stretch,
-            6, double.NaN, Cursors.SizeWE, "右边", new(0, 18, 0, 18));
-        AddResizeGrip(ResizeEdges.Top, HorizontalAlignment.Stretch, VerticalAlignment.Top,
-            double.NaN, 6, Cursors.SizeNS, "上边", new(18, 0, 18, 0));
-        AddResizeGrip(ResizeEdges.Bottom, HorizontalAlignment.Stretch, VerticalAlignment.Bottom,
-            double.NaN, 6, Cursors.SizeNS, "下边", new(18, 0, 18, 0));
         AddResizeGrip(ResizeEdges.Left | ResizeEdges.Top, HorizontalAlignment.Left,
             VerticalAlignment.Top, 18, 18, Cursors.SizeNWSE, "左上角");
         AddResizeGrip(ResizeEdges.Right | ResizeEdges.Top, HorizontalAlignment.Right,
@@ -79,7 +71,7 @@ public sealed partial class MainWindow
     private void BeginWindowResize(Thumb grip, ResizeEdges edges)
     {
         CancelWindowResize();
-        if (_closing || !IsVisible || WindowState != WindowState.Normal || _through) return;
+        if (_closing || !IsVisible || WindowState != WindowState.Normal) return;
         var handle = new WindowInteropHelper(this).Handle;
         if (!ReadDragWindowRect(handle, out var rect) || !ReadXRayCursor(out var cursor)) return;
         CancelImmersiveDrag(); CancelEdgeSeek(); UpdateXRayPointer(null);

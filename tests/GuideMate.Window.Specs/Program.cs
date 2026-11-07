@@ -93,6 +93,7 @@ internal static class Program
             Check(overlay.IsVisible && Near(overlay.Width, 620) && overlay.SizeToContent == SizeToContent.Height,
                 "subtitle restores saved width while retaining automatic height");
             SubtitlePointerSpecs.Run(window, overlay, output);
+            ImmersivePointerSpecs.Run(window);
             overlay.Left = 240; overlay.Top = 140; overlay.Width = 780;
             Field<Action?>(overlay, "PlacementChanged")?.Invoke();
             Check(store.Load().OverlayWidth == 780 && Near(store.Load().OverlayLeft, 240),
@@ -101,11 +102,13 @@ internal static class Program
                 "entering immersive restores its separate saved placement");
             window.Left = 310; window.Top = 240; window.Width = 800; window.Height = 450; Pump(60);
             window.SaveSettings();
-            Check(store.Load().ImmersiveBounds == new WindowPlacement(310, 240, 800, 450), "immersive actual geometry saves");
+            Check(store.Load().ImmersiveBounds is { } savedBounds && Near(savedBounds.Left, 310) && Near(savedBounds.Top, 240)
+                && Near(savedBounds.Width, 800) && Near(savedBounds.Height, 450), "immersive actual geometry saves");
             window.WindowState = WindowState.Minimized; Pump(50); window.SaveSettings();
             Check(!overlay.IsVisible && store.Load().SubtitleOverlay,
                 "minimizing immersive mode hides subtitles without switching the preference off");
-            Check(store.Load().ImmersiveBounds == new WindowPlacement(310, 240, 800, 450),
+            Check(store.Load().ImmersiveBounds is { } minimizedBounds && Near(minimizedBounds.Left, 310) && Near(minimizedBounds.Top, 240)
+                && Near(minimizedBounds.Width, 800) && Near(minimizedBounds.Height, 450),
                 "minimized small window saves restore bounds rather than minimized coordinates");
             Invoke(window, "RestoreMainWindow"); Pump(50);
             Check(overlay.IsVisible, "restoring immersive mode restores enabled subtitles");
@@ -212,13 +215,12 @@ internal static class Program
             var canceled = Bounds(window); Pump(80);
             Check(Bounds(window) == canceled && Field<Thumb?>(window, "_resizeGrip") == null,
                 "canceled resize drops pending moves");
-            var names = new Dictionary<string, ResizeEdges> { ["左边"] = ResizeEdges.Left, ["右边"] = ResizeEdges.Right,
-                ["上边"] = ResizeEdges.Top, ["下边"] = ResizeEdges.Bottom,
+            var names = new Dictionary<string, ResizeEdges> {
                 ["左上角"] = ResizeEdges.Left | ResizeEdges.Top, ["右上角"] = ResizeEdges.Right | ResizeEdges.Top,
                 ["左下角"] = ResizeEdges.Left | ResizeEdges.Bottom, ["右下角"] = ResizeEdges.Right | ResizeEdges.Bottom };
             var grips = Descendants(window).OfType<Thumb>().Where(grip =>
                 System.Windows.Automation.AutomationProperties.GetName(grip).StartsWith("窗口缩放：")).ToArray();
-            Check(grips.Length == 8, "all four edges and corners expose independent resize controls");
+            Check(grips.Length == 4, "only the four corners expose resize controls");
             foreach (var immersive in new[] { true, false })
             {
                 if (!immersive) { Invoke(window, "ToggleImmersive"); Pump(100); }

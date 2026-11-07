@@ -7,11 +7,11 @@ public sealed partial class MainWindow
 {
     // WebView2CompositionControl exposes OpacityMask read-only; mask its WPF video layer instead.
     private readonly Grid _videoSurface = new();
-    private readonly Grid _edgeProgress = new() { Height = 14, VerticalAlignment = VerticalAlignment.Bottom, Margin = new(18, 0, 18, 6),
+    private readonly Grid _edgeProgress = new() { Height = 8, VerticalAlignment = VerticalAlignment.Bottom, Margin = new(0),
         Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0)), Cursor = Cursors.Hand, Visibility = Visibility.Collapsed };
-    private readonly Border _edgeTrack = new() { Height = 3, VerticalAlignment = VerticalAlignment.Bottom,
+    private readonly Border _edgeTrack = new() { Height = 2, VerticalAlignment = VerticalAlignment.Bottom,
         Background = new SolidColorBrush(Color.FromArgb(200, 28, 32, 34)), IsHitTestVisible = false };
-    private readonly Border _edgePlayed = new() { Height = 3, VerticalAlignment = VerticalAlignment.Bottom,
+    private readonly Border _edgePlayed = new() { Height = 2, VerticalAlignment = VerticalAlignment.Bottom,
         HorizontalAlignment = HorizontalAlignment.Left, Background = new SolidColorBrush(Color.FromRgb(56, 218, 179)), IsHitTestVisible = false };
     private readonly TextBlock _edgeTime = new() { HorizontalAlignment = HorizontalAlignment.Right,
         VerticalAlignment = VerticalAlignment.Bottom, Margin = new(0, 0, 18, 24), Padding = new(6, 3, 6, 3),
@@ -91,10 +91,12 @@ public sealed partial class MainWindow
     {
         var opacity = _immersive ? _settings.GetImmersiveOpacity() : _settings.Opacity;
         Opacity = _faded ? Math.Min(opacity, 0.25) : opacity;
+        if (_controlLayer != null) _controlLayer.Opacity = Opacity;
     }
 
     private void UpdateSmallWindowLayout()
     {
+        SyncControlLayer();
         var radius = _settings.XRayRadius;
         _xrayMask.RadiusX = _xrayMask.RadiusY = radius;
         // Feather inside the saved outer radius, with a fully transparent core.
@@ -131,7 +133,7 @@ public sealed partial class MainWindow
             || _dragHandle.IsDragging || _resizeGrip != null || _edgeSeeking || pointer is not { } point
             || !new Rect(5, 5, Math.Max(0, _browser.ActualWidth - 10), Math.Max(0, _browser.ActualHeight - 19)).Contains(point))
         { _videoSurface.OpacityMask = null; return; }
-        var grip = new Rect(_dragHandle.TranslatePoint(new Point(), _browser), _dragHandle.RenderSize);
+        var grip = new Rect(_browser.PointFromScreen(_dragHandle.PointToScreen(new Point())), _dragHandle.RenderSize);
         grip.Inflate(3, 3);
         if (grip.Contains(point)) { _videoSurface.OpacityMask = null; return; }
         if (_xrayMask.Center != point) _xrayMask.Center = _xrayMask.GradientOrigin = point;
