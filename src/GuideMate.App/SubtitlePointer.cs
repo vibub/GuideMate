@@ -24,7 +24,7 @@ internal sealed partial class SubtitleWindow
     private void UpdatePointerTracking()
     {
         _pointerTimer.Stop(); CancelPointerGesture();
-        if (!IsVisible) return;
+        if (!IsVisible || !_clickThrough) return;
         _pointerButton = PointerSystemMetric(23) == 0 ? 1 : 2; // GetAsyncKeyState uses physical buttons.
         _buttonWasDown = PointerButtonState(_pointerButton) < 0; // Do not grab a press begun before showing.
         _pointerTimer.Start();
@@ -40,6 +40,7 @@ internal sealed partial class SubtitleWindow
 
     private void SamplePointerGesture(bool down, Point cursor, long timestamp, nint foreground)
     {
+        if (!_clickThrough) { CancelPointerGesture(); return; }
         if (!down)
         {
             _buttonWasDown = false;

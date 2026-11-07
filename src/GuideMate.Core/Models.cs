@@ -1,6 +1,5 @@
 namespace GuideMate.Core;
 
-public record SubtitleCue(double Start, double End, string Text);
 public record DirectionHint(string Label, double? Angle, string Category, string Source);
 public enum WindowTopmostMode { Never, Immersive, Always }
 
@@ -52,12 +51,11 @@ public class AppSettings
     public double DanmakuSpeed { get; set; } = 1;
     public bool XRayEnabled { get; set; }
     public double XRayRadius { get; set; } = 70;
-    public double HoleRatio { get; set; } = 0.3;
+    public bool ClickThrough { get; set; }
     public double Rate { get; set; } = 1;
     public double SeekSeconds { get; set; } = 5;
     public double TemporaryRate { get; set; } = 2;
     public int TemporaryHoldMilliseconds { get; set; } = 400;
-    public double SubtitleOffset { get; set; }
     public bool SubtitleOverlay { get; set; }
     public bool PauseOnCombat { get; set; }
     public bool FadeOnCombat { get; set; }

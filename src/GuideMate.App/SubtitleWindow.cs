@@ -24,7 +24,7 @@ internal sealed partial class SubtitleWindow : Window
         SourceInitialized += (_, _) =>
         {
             NativeHotkeys.HideFromWindowSwitcher(this, true);
-            NativeHotkeys.ClickThrough(this, true);
+            NativeHotkeys.ClickThrough(this, _clickThrough);
         };
         AllowsTransparency = true; Background = Brushes.Transparent; ResizeMode = ResizeMode.NoResize;
         var grid = new Grid { Margin = new(14, 10, 14, 20) };
@@ -79,8 +79,23 @@ internal sealed partial class SubtitleWindow : Window
         var surface = new Grid();
         surface.Children.Add(grid); surface.Children.Add(_widthGrip);
         Content = new Border { CornerRadius = new(4), Background = new SolidColorBrush(Color.FromArgb(228, 28, 32, 33)), Child = surface };
+        MouseLeftButtonDown += (_, e) =>
+        {
+            if (!_clickThrough && e.ChangedButton == System.Windows.Input.MouseButton.Left)
+            {
+                DragMove(); PlacementChanged?.Invoke(); e.Handled = true;
+            }
+        };
         InitializePointerGesture();
         Update("", null);
+    }
+    private bool _clickThrough;
+    public void SetClickThrough(bool enabled)
+    {
+        if (_clickThrough == enabled) return;
+        _clickThrough = enabled;
+        NativeHotkeys.ClickThrough(this, enabled);
+        UpdatePointerTracking();
     }
     public void ApplySettings(AppSettings settings)
     {

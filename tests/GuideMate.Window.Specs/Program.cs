@@ -70,11 +70,20 @@ internal static class Program
         try
         {
             window = Open();
-            Check(Texts(window).Any(text => text.Text == "点击穿透；长按拖动，右下角调宽"),
+            Check(Texts(window).Any(text => text.Text == "穿透模式下，字幕窗口可长按拖动或调整宽度"),
                 "main subtitle option includes the concise pointer gesture hint");
             Capture(window, Path.Combine(output, "subtitle-pointer-help.png"));
             Check(Field<Window?>(window, "_overlay")?.IsVisible != true && store.Load().SubtitleOverlay,
                 "normal startup keeps the subtitle preference without showing its window");
+            Invoke(window, "SetClickThrough", true);
+            Check(!Field<bool>(window, "_through") && store.Load().ClickThrough,
+                "normal window records preference without becoming click-through");
+            Invoke(window, "ToggleImmersive"); Pump(60);
+            Check(Field<bool>(window, "_through"), "entering immersive applies saved click-through");
+            Invoke(window, "ToggleImmersive"); Pump(60);
+            Check(!Field<bool>(window, "_through") && store.Load().ClickThrough,
+                "leaving immersive restores interaction and retains preference");
+            Invoke(window, "SetClickThrough", false);
             window.WindowState = WindowState.Maximized; Pump(60);
             Check(Field<Window?>(window, "_overlay")?.IsVisible != true,
                 "maximized normal mode does not show the subtitle window");
@@ -117,7 +126,7 @@ internal static class Program
                 "hide and restore preserve both window placements");
             window.Close(); window = null; Pump(60);
             window = Open();
-            Check(Texts(window).Any(text => text.Text == "点击穿透；长按拖动，右下角调宽"),
+            Check(Texts(window).Any(text => text.Text == "穿透模式下，字幕窗口可长按拖动或调整宽度"),
                 "main subtitle option includes the concise pointer gesture hint");
             Capture(window, Path.Combine(output, "subtitle-pointer-help.png"));
             Check(Field<Window?>(window, "_overlay")?.IsVisible != true,
@@ -274,26 +283,47 @@ internal static class Program
                 (Func<Dictionary<string, string>, int, string?>)((_, _) => null))!;
             var settings = Settings();
             settings.Show(); Pump(100);
-            Check(Texts(settings).Any(t => t.Text.Contains("管理员权限") && t.Text.Contains("BetterGI")),
+            Check(Texts(settings).Any(t => t.Text.Contains("管理员身份")),
                 "rendered hotkey settings include administrator guidance");
             Capture(settings, Path.Combine(output, "hotkey-settings.png"));
             var opacitySlider = Descendants(settings).OfType<Slider>().Single(slider =>
                 System.Windows.Automation.AutomationProperties.GetName(slider) == "字幕窗口透明度");
             Check(Near(overlay.Opacity, 0.65) && Math.Abs(opacitySlider.Value - 0.35) < 0.001,
                 "subtitle opacity initializes from saved value");
+            CheckBox Option(Window dialog, string title) => Descendants(dialog).OfType<CheckBox>().Single(box => Equals(box.Content, title));
+            var throughOption = Option(settings, "鼠标穿透（仅沉浸模式）");
+            var xrayOption = Option(settings, "鼠标 X 光");
+            Check(!xrayOption.IsEnabled && !Field<CheckBox>(window, "_xrayToggle").IsEnabled,
+                "X-ray controls in settings and sidebar are disabled without click-through");
+            throughOption.IsChecked = true; xrayOption.IsChecked = true;
+            Check(xrayOption.IsEnabled && !Field<bool>(window, "_through"), "settings changes wait for save");
             opacitySlider.Value = 0.55;
             settings.Close();
+            Check(!store.Load().ClickThrough && !store.Load().XRayEnabled, "cancel discards click-through and X-ray edits");
             Check(Math.Abs(overlay.Opacity - 0.65) < 0.001 && Math.Abs(store.Load().SubtitleOpacity - 0.65) < 0.001,
                 "cancel discards unsaved subtitle opacity");
             settings = Settings(); settings.Show(); Pump(80);
             opacitySlider = Descendants(settings).OfType<Slider>().Single(slider =>
                 System.Windows.Automation.AutomationProperties.GetName(slider) == "字幕窗口透明度");
             opacitySlider.Value = 0.55;
+            Option(settings, "鼠标穿透（仅沉浸模式）").IsChecked = true;
+            Option(settings, "鼠标 X 光").IsChecked = true;
+            Option(settings, "字幕与方向浮窗（仅沉浸模式）").IsChecked = false;
             var save = Descendants(settings).OfType<Button>().Single(button =>
                 System.Windows.Automation.AutomationProperties.GetName(button) == "保存设置");
             save.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump(80);
             Check(Math.Abs(overlay.Opacity - 0.45) < 0.001 && Math.Abs(store.Load().SubtitleOpacity - 0.45) < 0.001,
                 "save immediately applies subtitle opacity and persists it");
+            Check(Field<bool>(window, "_through") && Field<CheckBox>(window, "_throughToggle").IsChecked == true
+                && Field<CheckBox>(window, "_xrayToggle").IsChecked == true && store.Load().XRayEnabled,
+                "saved settings synchronize shared click-through and X-ray sidebar switches");
+            Check(!overlay.IsVisible && Field<CheckBox>(window, "_overlayToggle").IsChecked == false,
+                "saved subtitle switch synchronizes sidebar and visibility");
+            Field<CheckBox>(window, "_overlayToggle").IsChecked = true;
+            Invoke(window, "SetClickThrough", false);
+            Check(Field<CheckBox>(window, "_xrayToggle").IsChecked == true && !Field<CheckBox>(window, "_xrayToggle").IsEnabled
+                && !Field<DispatcherTimer>(window, "_xrayTimer").IsEnabled && store.Load().XRayEnabled,
+                "disabling click-through stops X-ray while preserving its preference");
             Capture(overlay, Path.Combine(output, "subtitle-opacity.png"));
             overlay.Close(); Field<AppSettings>(window, "_settings").SubtitleOverlay = true; Invoke(window, "UpdateOverlay"); Pump(80);
             Check(Math.Abs(Field<Window>(window, "_overlay").Opacity - 0.45) < 0.001,

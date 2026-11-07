@@ -71,6 +71,9 @@ public sealed partial class MainWindow
 
     internal void ApplySmallWindowSettings()
     {
+        if (_xrayToggle.IsChecked != _settings.XRayEnabled) _xrayToggle.IsChecked = _settings.XRayEnabled;
+        if (_xrayRadius.Value != _settings.XRayRadius) _xrayRadius.Value = _settings.XRayRadius;
+        ApplyClickThrough();
         ApplyWindowOpacity(); UpdateSmallWindowLayout(); UpdateXRayTracking(); ApplyWindowSwitcher();
     }
 
@@ -104,7 +107,7 @@ public sealed partial class MainWindow
 
     private void UpdateXRayTracking()
     {
-        if (_immersive && _settings.XRayEnabled && IsVisible && WindowState != WindowState.Minimized && !_closing)
+        if (_immersive && _through && _settings.XRayEnabled && IsVisible && WindowState != WindowState.Minimized && !_closing)
         {
             _xrayTimer.Start(); SampleXRayCursor();
         }
@@ -124,7 +127,7 @@ public sealed partial class MainWindow
 
     private void UpdateXRayPointer(Point? pointer)
     {
-        if (!_immersive || !_settings.XRayEnabled || !IsVisible || WindowState == WindowState.Minimized
+        if (!_immersive || !_through || !_settings.XRayEnabled || !IsVisible || WindowState == WindowState.Minimized
             || _dragHandle.IsDragging || _resizeGrip != null || _edgeSeeking || pointer is not { } point
             || !new Rect(5, 5, Math.Max(0, _browser.ActualWidth - 10), Math.Max(0, _browser.ActualHeight - 19)).Contains(point))
         { _videoSurface.OpacityMask = null; return; }

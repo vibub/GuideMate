@@ -7,18 +7,6 @@ void Check(bool condition, string name)
     Console.WriteLine("PASS " + name);
     checks++;
 }
-var srt = Subtitles.Parse("1\r\n00:00:01,000 --> 00:00:03,500\r\n<b>向东北走</b>\r\n\r\n2\r\n00:00:03,000 --> 00:00:05,000\r\n右转\r\n", ".srt");
-Check(srt.Count == 2 && srt[0].Text == "向东北走", "SRT markup and CRLF");
-Check(Subtitles.At(srt, 1) == "向东北走", "inclusive start");
-Check(Subtitles.At(srt, 5) == "", "exclusive end");
-Check(Subtitles.At(srt, 3.1) == "向东北走\n右转", "overlapping cues");
-Check(Subtitles.At(srt, 2, 1) == "向东北走", "subtitle delay");
-Check(Subtitles.At(srt, 1, 2) == "", "positive delay postpones cue");
-var vtt = Subtitles.Parse("WEBVTT\n\nNOTE ignored\n00:00.000 --> 00:30.000\nnot a cue\n\nx\n00:01.200 --> 00:02.600 align:start\n<c.green>Turn left &amp; go</c>\n", ".vtt");
-Check(vtt.Count == 1 && vtt[0].Start == 1.2 && vtt[0].Text == "Turn left & go", "VTT metadata, settings, entities");
-var json = Subtitles.Parse("{\"body\":[{\"from\":1,\"to\":2,\"content\":\"北边\"},{\"from\":3,\"to\":2,\"content\":\"bad\"}]}", ".json");
-Check(json.Count == 1, "Bilibili JSON and invalid interval");
-Check(Subtitles.Parse("[{\"from\":0,\"to\":2,\"content\":\"east\"}]", ".json").Count == 1, "JSON array");
 Check(DirectionAnalyzer.Analyze("向东北走")?.Angle == 45, "compound northeast");
 Check(DirectionAnalyzer.Analyze("往西南走")?.Angle == 225, "southwest");
 Check(DirectionAnalyzer.Analyze("Go north-east")?.Angle == 45, "English compass");
@@ -95,6 +83,10 @@ File.WriteAllText(Path.Combine(temp, "settings.json"), "{\"DanmakuDisplayArea\":
 var highDanmaku = store.Load();
 Check(highDanmaku.DanmakuDisplayArea == 1 && highDanmaku.DanmakuOpacity == 1
     && highDanmaku.DanmakuFontScale == 2 && highDanmaku.DanmakuSpeed == 2, "danmaku appearance upper bounds normalize on load");
+Check(!loaded.ClickThrough, "old profiles default to interactive windows");
+loaded.ClickThrough = true; store.Save(loaded);
+Check(store.Load().ClickThrough && store.Load().Hotkeys["Hide"] == loaded.Hotkeys["Hide"],
+    "shared click-through preference persists without replacing custom hotkeys");
 Check(loaded.GetImmersiveOpacity() == loaded.Opacity && !loaded.XRayEnabled && loaded.XRayRadius == 70,
     "new small-window defaults inherit opacity without enabling X-ray");
 loaded.Opacity = 0.75; loaded.ImmersiveOpacity = 0.45; loaded.XRayEnabled = true; loaded.XRayRadius = 95;

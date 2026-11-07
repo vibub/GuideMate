@@ -35,7 +35,6 @@ public sealed class SettingsStore(string directory)
             settings.SeekSeconds = Math.Clamp(settings.SeekSeconds, 1, 120);
             settings.TemporaryRate = double.IsFinite(settings.TemporaryRate) ? Math.Clamp(settings.TemporaryRate, 0.25, 4) : 2;
             settings.TemporaryHoldMilliseconds = Math.Clamp(settings.TemporaryHoldMilliseconds, 100, 2000);
-            settings.HoleRatio = Math.Clamp(settings.HoleRatio, 0.1, 0.65);
             settings.Bookmarks ??= [];
             settings.History ??= [];
             settings.OnlineVisionProfiles ??= [];

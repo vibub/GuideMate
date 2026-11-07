@@ -40,9 +40,12 @@ internal static class SubtitlePointerSpecs
         bool Through() => (ReadExtendedStyle(new WindowInteropHelper(overlay).Handle, -20).ToInt64() & 0x08000020) == 0x08000020;
         try
         {
-            Program.Check(Through() && timer.IsEnabled, "subtitle defaults to nonactivating click-through with tracking while visible");
-            Program.Invoke(main, "SetClickThrough", true); Program.Invoke(main, "SetClickThrough", false);
-            Program.Check(Through(), "main click-through toggles do not disable subtitle click-through");
+            Program.Check(!Through() && !timer.IsEnabled, "subtitle is interactive when shared click-through is off");
+            Program.Invoke(main, "SetClickThrough", true);
+            Program.Check(Through() && timer.IsEnabled && Program.Field<bool>(main, "_through"), "shared click-through enables both immersive windows");
+            Program.Invoke(main, "SetClickThrough", false);
+            Program.Check(!Through() && !timer.IsEnabled, "shared click-through disables subtitle tracking and restores interaction");
+            Program.Invoke(main, "SetClickThrough", true);
             timer.Stop();
             var point = overlay.PointToScreen(new(80, 20));
             Sample(false, point, 900);
@@ -106,11 +109,12 @@ internal static class SubtitlePointerSpecs
             moved = Program.Bounds(overlay);
             Program.Check(Math.Abs(moved.Left - initial.Left - 65) <= 2 && Math.Abs(moved.Top - initial.Top - 28) <= 2
                 && Through() && CurrentForeground() != new WindowInteropHelper(overlay).Handle,
-                "native hold and slide moves the subtitle without activating or capturing it");
+                $"native hold and slide moves the subtitle without activating or capturing it (delta={moved.Left - initial.Left},{moved.Top - initial.Top}; through={Through()}; foreground={CurrentForeground()}; overlay={new WindowInteropHelper(overlay).Handle})");
             Program.Capture(overlay, Path.Combine(output, "subtitle-held-drag.png"));
         }
         finally
         {
+            Program.Invoke(main, "SetClickThrough", false);
             if (injectedDown) Button(false);
             System.Windows.Input.Mouse.Capture(null); receiver?.Close(); timer.Stop();
             Sample(false, new(), 10000); Restore();

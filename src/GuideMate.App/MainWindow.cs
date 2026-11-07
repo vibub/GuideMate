@@ -42,7 +42,8 @@ public sealed partial class MainWindow : Window
     private Slider _volume = null!;
     private CheckBox _overlayToggle = null!;
     private CheckBox _throughToggle = null!;
-    private CheckBox _holeToggle = null!;
+    private CheckBox _xrayToggle = null!;
+    private Slider _xrayRadius = null!;
     private Slider _opacitySlider = null!;
     private NativeHotkeys? _keys;
     private VideoRouter? _videoRouter;
@@ -51,12 +52,11 @@ public sealed partial class MainWindow : Window
     private string _mediaKey = "";
     private Forms.NotifyIcon? _tray;
     private SubtitleWindow? _overlay;
-    private IReadOnlyList<SubtitleCue> _cues = [];
     private readonly HashSet<string> _combatEvents = [];
     private readonly DispatcherTimer _saveTimer = new() { Interval = TimeSpan.FromSeconds(12) };
     private readonly DispatcherTimer _fadeTimer = new() { Interval = TimeSpan.FromSeconds(5) };
     private double _position, _duration;
-    private bool _paused = true, _syncing, _seeking, _immersive, _through, _hole, _closing, _faded;
+    private bool _paused = true, _syncing, _seeking, _immersive, _through, _closing, _faded;
     private string _url = "", _title = "随引", _lastCaption = "", _notice = "";
     private string? _localFile;
     private string? _pendingLocalFile;
@@ -88,11 +88,12 @@ public sealed partial class MainWindow : Window
             _hotkeyStatus.Text = (error ?? "全局热键已启用") + "\n紧急恢复：" + _keys.EmergencyBinding;
             if (!_keys.EmergencyAvailable) _hotkeyStatus.Text += $"（冲突 {_keys.EmergencyError}，穿透已禁用）";
             _throughToggle.IsEnabled = _keys.EmergencyAvailable;
+            ApplyClickThrough();
             InitializeTray();
         };
         Loaded += async (_, _) => await InitializeBrowserAsync();
         Loaded += async (_, _) => await CheckUpdatesAtStartupAsync();
-        SizeChanged += (_, _) => { UpdateClip(); UpdateSmallWindowLayout(); if (_onlineProfile != null) { InvalidateOnlineSample(); UpdateDirection(); } };
+        SizeChanged += (_, _) => { UpdateSmallWindowLayout(); if (_onlineProfile != null) { InvalidateOnlineSample(); UpdateDirection(); } };
         LocationChanged += (_, _) => UpdateDanmakuOverlay();
         IsVisibleChanged += (_, _) => { UpdateDanmakuOverlay(); UpdateXRayTracking(); UpdateImmersiveControls(); if (!IsVisible) { InvalidateOnlineSample(); UpdateDirection(); } };
         StateChanged += (_, _) =>
@@ -167,23 +168,8 @@ public sealed partial class MainWindow : Window
         follow.Children.Add(Ui.Heading("当前方向")); follow.Children.Add(_direction); follow.Children.Add(_directionKind);
         follow.Children.Add(Ui.Heading("同步字幕")); _caption.MinHeight = 40; follow.Children.Add(_caption);
         _subtitleSource.Margin = new(0, 6, 0, 4); follow.Children.Add(_subtitleSource);
-        follow.Children.Add(Ui.Command("\uE8A5", "导入字幕", ImportSubtitles));
-        follow.Children.Add(Ui.Command("\uE894", "清除导入字幕", () => { _cues = []; _lastCaption = ""; _subtitleSource.Text = "网页字幕"; }));
-        _overlayToggle = Ui.Toggle("字幕与方向浮窗（仅沉浸模式）", _settings.SubtitleOverlay, value => { _settings.SubtitleOverlay = value; UpdateOverlay(); });
+        _overlayToggle = Ui.Toggle("字幕与方向浮窗（仅沉浸模式）", _settings.SubtitleOverlay, value => { _settings.SubtitleOverlay = value; UpdateOverlay(); SaveSettings(); });
         follow.Children.Add(_overlayToggle);
-        var overlayHint = Ui.Text("点击穿透；长按拖动，右下角调宽", 11, Ui.Muted);
-        overlayHint.Margin = new(0, 0, 0, 8);
-        overlayHint.ToolTip = "按住约 0.4 秒后拖动字幕窗口；右下角同样长按后左右拖动调节宽度。";
-        follow.Children.Add(overlayHint);
-        var offsetRow = new Grid(); offsetRow.ColumnDefinitions.Add(new()); offsetRow.ColumnDefinitions.Add(new() { Width = new(74) });
-        offsetRow.Children.Add(Ui.Text("字幕延迟（秒）", 12));
-        var offset = new TextBox { Text = _settings.SubtitleOffset.ToString(CultureInfo.InvariantCulture), ToolTip = "正值延后字幕，负值提前" };
-        offset.LostFocus += (_, _) =>
-        {
-            if (double.TryParse(offset.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value) && double.IsFinite(value)) _settings.SubtitleOffset = Math.Clamp(value, -600, 600);
-            offset.Text = _settings.SubtitleOffset.ToString(CultureInfo.InvariantCulture);
-        };
-        Grid.SetColumn(offset, 1); offsetRow.Children.Add(offset); follow.Children.Add(offsetRow);
         follow.Children.Add(Ui.Heading("窗口"));
         follow.Children.Add(Ui.Text("置顶模式", 11, Ui.Muted));
         _topmostMode.ItemsSource = new[] { "不置顶", "沉浸置顶", "始终置顶" };
@@ -198,10 +184,24 @@ public sealed partial class MainWindow : Window
             SaveSettings();
         };
         follow.Children.Add(_topmostMode);
-        _throughToggle = Ui.Toggle("鼠标穿透", false, SetClickThrough); follow.Children.Add(_throughToggle);
-        _holeToggle = Ui.Toggle("中央透明孔", false, value => { _hole = value; UpdateClip(); }); follow.Children.Add(_holeToggle);
-        follow.Children.Add(Ui.Text("透明孔大小", 11, Ui.Muted));
-        follow.Children.Add(Ui.Slider(0.1, 0.65, _settings.HoleRatio, value => { _settings.HoleRatio = value; UpdateClip(); }));
+        _throughToggle = Ui.Toggle("鼠标穿透（仅沉浸模式）", _settings.ClickThrough, SetClickThrough); follow.Children.Add(_throughToggle);
+        follow.Children.Add(Ui.Text("穿透模式下，字幕窗口可长按拖动或调整宽度", 11, Ui.Muted));
+        _xrayToggle = Ui.Toggle("鼠标 X 光", _settings.XRayEnabled, value =>
+        {
+            if (_settings.XRayEnabled == value) return;
+            _settings.XRayEnabled = value; ApplySmallWindowSettings(); SaveSettings();
+        });
+        _xrayToggle.IsEnabled = _settings.ClickThrough;
+        follow.Children.Add(_xrayToggle);
+        follow.Children.Add(Ui.Text("X 光半径", 11, Ui.Muted));
+        _xrayRadius = Ui.Slider(20, 200, _settings.XRayRadius, value =>
+        {
+            if (_settings.XRayRadius == value) return;
+            _settings.XRayRadius = value; UpdateSmallWindowLayout(); SaveSettings();
+        });
+        _xrayRadius.TickFrequency = 5; _xrayRadius.IsSnapToTickEnabled = true;
+        _xrayRadius.IsEnabled = _settings.ClickThrough && _settings.XRayEnabled;
+        follow.Children.Add(_xrayRadius);
         var opacityLabel = Ui.Text($"不透明度  {_settings.Opacity:P0}", 11, Ui.Muted); follow.Children.Add(opacityLabel);
         _opacitySlider = Ui.Slider(0.2, 1, _settings.Opacity, value => { _settings.Opacity = value; ApplyWindowOpacity(); opacityLabel.Text = $"不透明度  {value:P0}"; }); follow.Children.Add(_opacitySlider);
         follow.Children.Add(Ui.Heading("字幕触发"));
@@ -329,7 +329,7 @@ public sealed partial class MainWindow : Window
                 if (!_navigationRequested) _resume = samePage && _duration > 0 ? CurrentVideo() : null;
                 _navigationRequested = false; _resumeApplied = false;
                 _temporaryRestoreRate = _resume?.Rate ?? _settings.Rate;
-                if (!samePage) { _cues = []; _combatEvents.Clear(); _subtitleSource.Text = "网页字幕"; }
+                if (!samePage) { _combatEvents.Clear(); _subtitleSource.Text = "网页字幕"; }
                 _position = 0; _duration = 0; _paused = true;
                 CancelEdgeSeek(); UpdateEdgeProgress();
                 _lastCaption = ""; _caption.Text = "暂无字幕"; _direction.Text = "—"; _directionKind.Text = "等待方向提示";
@@ -348,7 +348,6 @@ public sealed partial class MainWindow : Window
                 if (!e.IsSuccess) { _status.Text = "加载失败：" + e.WebErrorStatus; return; }
                 _status.Text = "已加载";
                 await core.ExecuteScriptAsync(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "assets", "bridge.js")));
-                if (core.Source.Contains("guidemate.local/demo")) LoadSubtitles(Path.Combine(AppContext.BaseDirectory, "assets", "demo.srt"));
             };
             core.NewWindowRequested += (_, e) => { e.Handled = true; Navigate(e.Uri); };
             await core.AddScriptToExecuteOnDocumentCreatedAsync(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "assets", "bridge.js")));
@@ -393,7 +392,7 @@ public sealed partial class MainWindow : Window
                 ResetVideoAspectRatio(); ResetDanmaku();
                 var episodeRate = _settings.Rate;
                 Fire(() => SetRateAsync(episodeRate));
-                _cues = []; _combatEvents.Clear(); _lastCaption = ""; _subtitleSource.Text = "网页字幕"; _notice = "";
+                _combatEvents.Clear(); _lastCaption = ""; _subtitleSource.Text = "网页字幕"; _notice = "";
                 LoadVisualTrack();
             }
             if (_immersive && _mediaKey != mediaKey) Fire(() => CommandAsync("focusOn"));
@@ -426,8 +425,7 @@ public sealed partial class MainWindow : Window
                     await SetRateAsync(resumeRate);
                 });
             }
-            var caption = _cues.Count > 0 ? Subtitles.At(_cues, _position, _settings.SubtitleOffset)
-                : root.TryGetProperty("subtitle", out var subtitle) ? subtitle.GetString() ?? "" : "";
+            var caption = root.TryGetProperty("subtitle", out var subtitle) ? subtitle.GetString() ?? "" : "";
             UpdateCaption(caption);
             _status.Text = _notice.Length > 0 ? _notice : $"{(_paused ? "已暂停" : "播放中")} · {rate:0.##}x" + (_through ? " · 鼠标穿透" : "");
         }
@@ -447,7 +445,7 @@ public sealed partial class MainWindow : Window
         }
         UpdateDirection();
         if (caption.Length == 0 || !DirectionAnalyzer.IsCombat(caption) || _paused || (!_settings.PauseOnCombat && !_settings.FadeOnCombat)) return;
-        var eventKey = _cues.Count > 0 ? string.Join("|", _cues.Where(c => c.Start <= _position - _settings.SubtitleOffset && _position - _settings.SubtitleOffset < c.End).Select(c => c.Start.ToString("R", CultureInfo.InvariantCulture))) : caption;
+        var eventKey = caption;
         if (!_combatEvents.Add(eventKey)) return;
         if (_settings.PauseOnCombat) Fire(() => CommandAsync("pause"));
         if (_settings.FadeOnCombat) { _faded = true; ApplyWindowOpacity(); _fadeTimer.Stop(); _fadeTimer.Start(); }
@@ -531,24 +529,6 @@ public sealed partial class MainWindow : Window
         _pendingLocalFile = Path.GetFullPath(path);
         Navigate("https://guidemate.local/local.html?file=" + Uri.EscapeDataString(Path.GetFileName(_pendingLocalFile)), resume);
     }
-    private void ImportSubtitles()
-    {
-        var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "字幕文件|*.srt;*.vtt;*.json|所有文件|*.*" };
-        if (dialog.ShowDialog(this) == true) LoadSubtitles(dialog.FileName);
-    }
-    private void LoadSubtitles(string path)
-    {
-        try
-        {
-            var cues = Subtitles.Parse(File.ReadAllText(path), Path.GetExtension(path));
-            _cues = cues; _lastCaption = ""; _combatEvents.Clear();
-            _subtitleSource.Text = Path.GetFileName(path) + $" · {cues.Count} 条";
-            UpdateCaption(Subtitles.At(cues, _position, _settings.SubtitleOffset));
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FormatException or JsonException)
-        { _status.Text = _notice = "字幕导入失败：" + ex.Message; }
-    }
-
     private void AddBookmark()
     {
         if (_url.Length == 0) return;
@@ -631,20 +611,33 @@ public sealed partial class MainWindow : Window
                 break;
             case "Hide": ToggleHidden(); ShowHotkeyFeedback("已恢复", _hotkeyFeedbackVersion); break;
             case "ClickThrough":
-                var through = !_through;
+                var through = !_settings.ClickThrough;
                 SetClickThrough(through);
-                ShowHotkeyFeedback(_through == through ? through ? "开启鼠标穿透" : "关闭鼠标穿透" : "鼠标穿透不可用", version);
+                ShowHotkeyFeedback(_settings.ClickThrough == through ? through ? "开启鼠标穿透" : "关闭鼠标穿透" : "鼠标穿透不可用", version);
                 break;
             case "Emergency": EmergencyRestore(); break;
         }
     }
+    internal bool CanEnableClickThrough => _keys?.EmergencyAvailable == true;
+
     private void SetClickThrough(bool enabled)
     {
-        if (enabled && _keys?.EmergencyAvailable != true) { _throughToggle.IsChecked = false; _status.Text = "紧急恢复热键不可用，无法启用穿透。"; return; }
-        if (_through == enabled) return;
-        CancelWindowResize();
-        _through = enabled; NativeHotkeys.ClickThrough(this, enabled);
-        _throughToggle.IsChecked = enabled;
+        if (enabled && !CanEnableClickThrough) { _throughToggle.IsChecked = false; _status.Text = "紧急恢复热键不可用，无法启用穿透。"; return; }
+        if (_settings.ClickThrough == enabled) return;
+        _settings.ClickThrough = enabled;
+        ApplyClickThrough(); SaveSettings();
+    }
+
+    private void ApplyClickThrough()
+    {
+        CancelWindowResize(); CancelImmersiveDrag(); CancelEdgeSeek();
+        _through = _immersive && _settings.ClickThrough && CanEnableClickThrough;
+        NativeHotkeys.ClickThrough(this, _through);
+        _overlay?.SetClickThrough(_through);
+        if (_throughToggle.IsChecked != _settings.ClickThrough) _throughToggle.IsChecked = _settings.ClickThrough;
+        _xrayToggle.IsEnabled = _settings.ClickThrough && CanEnableClickThrough;
+        _xrayRadius.IsEnabled = _xrayToggle.IsEnabled && _settings.XRayEnabled;
+        UpdateXRayTracking();
     }
     private void ToggleImmersive()
     {
@@ -692,7 +685,7 @@ public sealed partial class MainWindow : Window
             WindowState = _normalWindowState;
             Fire(() => CommandAsync("focusOff"));
         }
-        ApplyWindowSwitcher(); UpdateClip(); UpdateOverlay(); UpdateDanmakuOverlay(); UpdateImmersiveControls();
+        ApplyWindowSwitcher(); ApplyClickThrough(); UpdateOverlay(); UpdateDanmakuOverlay(); UpdateImmersiveControls();
         SaveSettings();
         Dispatcher.InvokeAsync(() => { _browser.Visibility = Visibility.Visible; _browser.UpdateLayout(); UpdateSmallWindowLayout(); UpdateXRayTracking(); }, DispatcherPriority.Loaded);
     }
@@ -717,19 +710,10 @@ public sealed partial class MainWindow : Window
     private void EmergencyRestore()
     {
         _keys?.CancelTemporaryRate(); Fire(EndTemporaryRateAsync);
-        SetClickThrough(false); _hole = false; _holeToggle.IsChecked = false;
+        SetClickThrough(false);
         if (_immersive) ToggleImmersive();
         _faded = false; _fadeTimer.Stop(); _opacitySlider.Value = 1; Opacity = 1;
-        UpdateClip(); RestoreMainWindow();
-    }
-    private void UpdateClip()
-    {
-        if (!_hole || _root.ActualWidth <= 0) { _root.Clip = null; return; }
-        var width = _root.ActualWidth; var height = _root.ActualHeight;
-        var holeWidth = width * _settings.HoleRatio; var holeHeight = height * _settings.HoleRatio;
-        _root.Clip = new CombinedGeometry(GeometryCombineMode.Exclude,
-            new RectangleGeometry(new Rect(0, 0, width, height)),
-            new RectangleGeometry(new Rect((width - holeWidth) / 2, (height - holeHeight) / 2, holeWidth, holeHeight)));
+        RestoreMainWindow();
     }
     private void RememberImmersiveBounds()
     {
@@ -743,7 +727,12 @@ public sealed partial class MainWindow : Window
         _settings.OverlayLeft = _overlay.Left; _settings.OverlayTop = _overlay.Top; _settings.OverlayWidth = _overlay.Width;
     }
 
-    internal void ApplySubtitleSettings() => _overlay?.ApplySettings(_settings);
+    internal void ApplySubtitleSettings()
+    {
+        _overlay?.ApplySettings(_settings);
+        if (_overlayToggle.IsChecked != _settings.SubtitleOverlay) _overlayToggle.IsChecked = _settings.SubtitleOverlay;
+        UpdateOverlay();
+    }
 
     private void UpdateOverlay()
     {
@@ -751,13 +740,14 @@ public sealed partial class MainWindow : Window
         if (_overlay == null)
         {
             _overlay = new() { Left = _settings.OverlayLeft, Top = _settings.OverlayTop, Width = Math.Max(260, _settings.OverlayWidth) };
-            ApplySubtitleSettings();
+            _overlay.ApplySettings(_settings);
             _overlay.PlacementChanged += SaveSettings;
             _overlay.Closing += (_, _) => SaveSettings();
             _overlay.Show(); Ui.PlaceVisible(_overlay);
             _overlay.Closed += (_, _) => { _overlay = null; if (!_closing) { _settings.SubtitleOverlay = false; _overlayToggle.IsChecked = false; } };
         }
         else _overlay.Show();
+        _overlay.SetClickThrough(_through);
         _overlay.Update(_lastCaption, CurrentDirection());
     }
     private void InitializeTray()
