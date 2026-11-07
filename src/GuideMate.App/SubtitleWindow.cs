@@ -1,3 +1,4 @@
+using System.Windows.Interop;
 using System.Windows.Controls.Primitives;
 
 namespace GuideMate.App;
@@ -25,6 +26,7 @@ internal sealed partial class SubtitleWindow : Window
         {
             NativeHotkeys.HideFromWindowSwitcher(this, true);
             NativeHotkeys.ClickThrough(this, _clickThrough);
+            HwndSource.FromHwnd(new WindowInteropHelper(this).Handle).AddHook(SubtitlePointerMessage);
         };
         AllowsTransparency = true; Background = Brushes.Transparent; ResizeMode = ResizeMode.NoResize;
         var grid = new Grid { Margin = new(14, 10, 14, 20) };
@@ -88,6 +90,11 @@ internal sealed partial class SubtitleWindow : Window
         };
         InitializePointerGesture();
         Update("", null);
+    }
+    private nint SubtitlePointerMessage(nint handle, int message, nint wParam, nint lParam, ref bool handled)
+    {
+        if (message == 0x0021 && _clickThrough) { handled = true; return 3; } // MA_NOACTIVATE during a captured hold.
+        return 0;
     }
     private bool _clickThrough;
     public void SetClickThrough(bool enabled)

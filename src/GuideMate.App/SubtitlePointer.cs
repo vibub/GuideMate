@@ -7,7 +7,7 @@ namespace GuideMate.App;
 internal sealed partial class SubtitleWindow
 {
     private readonly DispatcherTimer _pointerTimer = new(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(50) };
-    private bool _buttonWasDown, _pointerHeld, _pointerDragging, _pointerResizing;
+    private bool _buttonWasDown, _pointerHeld, _pointerDragging, _pointerResizing, _pointerCaptured;
     private int _pointerButton;
     private long _pointerPressedAt;
     private nint _pointerForeground;
@@ -19,6 +19,15 @@ internal sealed partial class SubtitleWindow
         _pointerTimer.Tick += (_, _) => PollPointerGesture();
         IsVisibleChanged += (_, _) => UpdatePointerTracking();
         Closed += (_, _) => { _pointerTimer.Stop(); CancelPointerGesture(); };
+        LostMouseCapture += (_, _) => { if (_pointerCaptured && !IsMouseCaptured) CancelPointerGesture(); };
+        PreviewMouseUp += (_, e) =>
+        {
+            if (!_pointerCaptured) return;
+            e.Handled = true;
+            if (PointerButtonState(_pointerButton) >= 0)
+                SamplePointerGesture(false, PointToScreen(e.GetPosition(this)), Environment.TickCount64, PointerForeground());
+        };
+        PreviewMouseDown += (_, e) => { if (_pointerCaptured) e.Handled = true; };
     }
 
     private void UpdatePointerTracking()
@@ -73,9 +82,31 @@ internal sealed partial class SubtitleWindow
             if (moved) CancelPointerGesture();
             return;
         }
+        if (!_pointerCaptured)
+        {
+            // Capture belongs to an input queue: SetCapture alone does not cancel a
+            // different process's existing drag. Cancel that drag before taking over.
+            if (!CancelUnderlyingCapture()) { CancelPointerGesture(); return; }
+            NativeHotkeys.ClickThrough(this, false);
+            _pointerCaptured = true;
+            if (!CaptureMouse()) { CancelPointerGesture(); return; }
+        }
         if (!_pointerDragging && !moved) return;
         _pointerDragging = true;
         ApplyPointerPosition(cursor);
+    }
+
+    private bool CancelUnderlyingCapture()
+    {
+        var thread = PointerWindowThread(_pointerForeground, 0);
+        var info = new PointerGuiInfo { Size = (uint)Marshal.SizeOf<PointerGuiInfo>() };
+        if (thread == 0 || !PointerGuiThreadInfo(thread, ref info)) return false;
+        if (info.Capture == 0) return true;
+        // WM_CANCELMODE releases standard drag/selection capture without synthesizing
+        // a button-up (which could otherwise activate an underlying button).
+        if (PointerCancelMode(info.Capture, 0x001F, 0, 0, 0x0002, 100, out _) == 0) return false;
+        info.Size = (uint)Marshal.SizeOf<PointerGuiInfo>();
+        return PointerGuiThreadInfo(thread, ref info) && info.Capture == 0;
     }
 
     private void ApplyPointerPosition(Point cursor)
@@ -85,7 +116,7 @@ internal sealed partial class SubtitleWindow
             Width = Math.Max(MinWidth, _pointerWidth + (PointFromScreen(cursor) - PointFromScreen(_pointerOrigin)).X);
             return;
         }
-        // Keep native click-through enabled throughout; never capture, inject or replay an underlying click.
+        // Move without activating the subtitle; input capture lasts only for this hold.
         var handle = new WindowInteropHelper(this).Handle;
         var left = (int)Math.Round(cursor.X - _pointerOffset.X);
         var top = (int)Math.Round(cursor.Y - _pointerOffset.Y);
@@ -96,6 +127,12 @@ internal sealed partial class SubtitleWindow
     private void CancelPointerGesture()
     {
         _pointerHeld = false; _pointerDragging = false;
+        if (_pointerCaptured)
+        {
+            _pointerCaptured = false;
+            if (IsMouseCaptured) ReleaseMouseCapture();
+            NativeHotkeys.ClickThrough(this, _clickThrough);
+        }
         _pointerTimer.Interval = TimeSpan.FromMilliseconds(50);
     }
 
@@ -103,6 +140,20 @@ internal sealed partial class SubtitleWindow
     private struct PointerPoint { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)]
     private struct PointerRectangle { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct PointerGuiInfo
+    {
+        public uint Size, Flags;
+        public nint Active, Focus, Capture, MenuOwner, MoveSize, Caret;
+        public PointerRectangle CaretBounds;
+    }
+    [DllImport("user32.dll", EntryPoint = "GetWindowThreadProcessId")]
+    private static extern uint PointerWindowThread(nint window, nint processId);
+    [DllImport("user32.dll", EntryPoint = "GetGUIThreadInfo")]
+    [return: MarshalAs(UnmanagedType.Bool)] private static extern bool PointerGuiThreadInfo(uint thread, ref PointerGuiInfo info);
+    [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW")]
+    private static extern nint PointerCancelMode(nint window, uint message, nint wParam, nint lParam,
+        uint flags, uint timeout, out nuint result);
     [DllImport("user32.dll", EntryPoint = "GetCursorPos")]
     [return: MarshalAs(UnmanagedType.Bool)] private static extern bool PointerCursor(out PointerPoint point);
     [DllImport("user32.dll", EntryPoint = "GetWindowRect")]

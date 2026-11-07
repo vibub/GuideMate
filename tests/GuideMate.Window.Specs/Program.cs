@@ -21,6 +21,16 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        if (args.Length == 1 && args[0] == "--subtitle-capture")
+        {
+            SubtitlePointerSpecs.RunCaptureChecks();
+            return;
+        }
+        if (args.Length == 1 && args[0] == "--subtitle-receiver")
+        {
+            SubtitlePointerSpecs.RunReceiver();
+            return;
+        }
         if (args.Length == 2 && args[0] == "--playback-resume")
         {
             PlaybackResumeSpecs.Run(args[1]);
