@@ -6,11 +6,13 @@ public sealed class SettingsStore(string directory)
 {
     private readonly string _path = Path.Combine(directory, "settings.json");
     private readonly JsonSerializerOptions _options = new() { WriteIndented = true, PropertyNameCaseInsensitive = true };
+    public bool IsFirstRun { get; private set; }
     public string? LoadWarning { get; private set; }
 
     public AppSettings Load()
     {
-        if (!File.Exists(_path)) return new();
+        IsFirstRun = !File.Exists(_path);
+        if (IsFirstRun) return new();
         try
         {
             var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(_path), _options) ?? new();

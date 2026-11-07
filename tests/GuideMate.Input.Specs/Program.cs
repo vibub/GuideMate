@@ -18,6 +18,28 @@ internal static class Program
         keys.TemporaryRateReleased += () => releases++;
         try
         {
+            var blockerWindow = new Window();
+            new WindowInteropHelper(blockerWindow).EnsureHandle();
+            using (var blocker = new NativeHotkeys(blockerWindow))
+            {
+                Check(blocker.Apply(new() { ["PlayPause"] = "Ctrl+Alt+Shift+F11" }) == null, "reserve conflicting native shortcut");
+                var initial = new Dictionary<string, string> { ["PlayPause"] = "Ctrl+Alt+Shift+F11", ["SeekForward"] = "Mouse5" };
+                Check(keys.ApplyInitial(initial) != null && initial["PlayPause"] == "" && initial["SeekForward"] == "Mouse5",
+                    "first launch clears only unavailable defaults");
+                Check(keys.Apply(new() { ["PlayPause"] = "Ctrl+Alt+Shift+F11", ["SeekForward"] = "" }, 600) != null,
+                    "native conflict rejects edited shortcuts");
+                Check(keys.HoldMilliseconds == 400 && keys.ConsumeMouseButton(6, true, 0), "failed save restores previous active shortcut and hold threshold");
+                keys.ConsumeMouseButton(6, false, 0);
+                Check(keys.Validate(new() { ["PlayPause"] = "Ctrl+Alt+Shift+F11" }) != null, "reset rejects occupied default");
+                Apply(new() { ["PlayPause"] = "", ["SeekForward"] = "", ["TemporaryRate"] = "" });
+                Check(keys.Apply(new() { ["PlayPause"] = "Ctrl+Alt+Shift+F11" }) != null, "conflict rolls back to all-empty bindings");
+                Check(!keys.ConsumeMouseButton(6, true, 0), "empty rollback does not restore stale mouse binding");
+                Check(keys.Validate(new() { ["PlayPause"] = "Mouse4" }) == null && !keys.ConsumeMouseButton(5, true, 0),
+                    "successful reset validation leaves saved empty bindings unchanged");
+                keys.SuspendOrdinaryBindings();
+                Check(keys.ResumeOrdinaryBindings() == null, "empty shortcuts survive recording suspend and resume");
+            }
+            blockerWindow.Close();
             Apply(GuideMate.Core.AppSettings.DefaultHotkeys());
             var appearanceActions = new[] { "ImmersiveTransparencyUp", "ImmersiveTransparencyDown", "SubtitleOverlay", "RateUp", "RateDown" };
             foreach (var action in appearanceActions)

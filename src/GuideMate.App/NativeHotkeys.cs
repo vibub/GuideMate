@@ -125,13 +125,40 @@ internal sealed class NativeHotkeys : IDisposable
         return Apply(new(_active), HoldMilliseconds);
     }
 
+    // 仅用于没有设置文件的首次启动；失败项保持为空，其他默认热键继续注册。
+    public string? ApplyInitial(Dictionary<string, string> bindings, int holdMilliseconds = 400)
+    {
+        var accepted = bindings.ToDictionary(pair => pair.Key, _ => "");
+        var errors = new List<string>();
+        foreach (var pair in bindings.ToArray())
+        {
+            var candidate = new Dictionary<string, string>(accepted) { [pair.Key] = pair.Value };
+            var error = Apply(candidate, holdMilliseconds);
+            if (error == null) accepted = candidate;
+            else errors.Add(pair.Key);
+        }
+        foreach (var pair in accepted) bindings[pair.Key] = pair.Value;
+        return errors.Count == 0 ? null : "以下默认热键不可用，已设为未设置：" + string.Join("、", errors);
+    }
+
+    // 检查设置草稿后恢复已保存的绑定，不让重置按钮提前应用设置。
+    public string? Validate(Dictionary<string, string> bindings)
+    {
+        var resumeError = ResumeOrdinaryBindings();
+        if (resumeError != null) return resumeError;
+        var previous = new Dictionary<string, string>(_active);
+        var error = Apply(bindings, HoldMilliseconds);
+        if (error != null) return error;
+        return Apply(previous, HoldMilliseconds);
+    }
+
     public string? Apply(Dictionary<string, string> bindings, int holdMilliseconds = 400)
     {
         if (holdMilliseconds is < 100 or > 2000) return "长按触发时间应为 100 至 2000 毫秒。";
         var parsed = new List<Binding>();
         try
         {
-            foreach (var group in bindings.GroupBy(pair => Parse(pair.Value)))
+            foreach (var group in bindings.Where(pair => !string.IsNullOrWhiteSpace(pair.Value)).GroupBy(pair => Parse(pair.Value)))
             {
                 var taps = group.Where(pair => pair.Key != "TemporaryRate").ToArray();
                 if (taps.Length > 1) return "两个普通操作不能使用相同热键；长按临时倍速可以与一个普通操作共用。";

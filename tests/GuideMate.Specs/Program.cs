@@ -21,8 +21,15 @@ Check(DirectionAnalyzer.IsCombat("先清怪，再开宝箱"), "combat cue");
 Check(!DirectionAnalyzer.IsCombat("不用打怪"), "negated combat");
 var temp = Path.Combine(Path.GetTempPath(), "GuideMate-specs-" + Guid.NewGuid());
 var store = new SettingsStore(temp);
+store.Load();
+Check(store.IsFirstRun, "missing settings identifies first launch");
 store.Save(new AppSettings { Rate = 1.5, Bookmarks = [new() { Url = "https://example.com", Position = 12 }] });
 var loaded = store.Load();
+Check(!store.IsFirstRun, "existing profile is not first launch");
+loaded.Hotkeys["PlayPause"] = "";
+loaded.Hotkeys["TemporaryRate"] = "";
+store.Save(loaded);
+Check(store.Load().Hotkeys["PlayPause"] == "" && store.Load().Hotkeys["TemporaryRate"] == "", "cleared shortcuts survive reload without default replacement");
 Check(loaded.Rate == 1.5 && loaded.Bookmarks[0].Position == 12, "settings roundtrip");
 Check(!loaded.AutoCleanWebViewCache && loaded.WebViewCacheCleanupDays == 7
     && loaded.LastWebViewCacheCleanupUtc == null && loaded.NextWebViewCacheCleanupUtc == null,

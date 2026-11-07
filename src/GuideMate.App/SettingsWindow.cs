@@ -18,7 +18,7 @@ internal sealed class SettingsWindow : Window
             return content;
         }
         var panel = Section("全局热键", "热键");
-        panel.Children.Add(Ui.Text("点击输入框录制快捷键，支持鼠标侧键及组合键。", 12, Ui.Muted));
+        panel.Children.Add(Ui.Text("点击录制热键；X 清除，重置恢复默认值。空白表示未设置，保存后生效。", 12, Ui.Muted));
         panel.Children.Add(Ui.Text("若设置了鼠标侧键无反应，请以管理员身份运行程序。", 12, Ui.Muted));
         var names = new Dictionary<string, string> { ["PlayPause"] = "播放 / 暂停", ["SeekBack"] = "后退", ["SeekForward"] = "快进", ["RateUp"] = "加快倍速", ["RateDown"] = "降低倍速", ["ImmersiveTransparencyUp"] = "提高小窗透明度", ["ImmersiveTransparencyDown"] = "降低小窗透明度", ["SubtitleOverlay"] = "字幕浮窗开关", ["TemporaryRate"] = "长按临时倍速", ["PreviousEpisode"] = "上一集", ["NextEpisode"] = "下一集", ["Immersive"] = "沉浸模式", ["FullscreenDanmaku"] = "全屏弹幕开关", ["Hide"] = "隐藏 / 恢复", ["ClickThrough"] = "鼠标穿透" };
         var fields = new Dictionary<string, TextBox>();
@@ -36,9 +36,22 @@ internal sealed class SettingsWindow : Window
         {
             var row = new Grid { Margin = new(0, 4, 0, 4) };
             row.ColumnDefinitions.Add(new() { Width = new(130) }); row.ColumnDefinitions.Add(new());
+            row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
             row.Children.Add(Ui.Text(pair.Value));
             var field = new HotkeyRecorder(settings.Hotkeys.GetValueOrDefault(pair.Key, AppSettings.DefaultHotkeys()[pair.Key]), RecordingChanged, message => error.Text = message);
             System.Windows.Automation.AutomationProperties.SetName(field, pair.Value + "热键");
+            var clear = Ui.Icon("\uE711", "清除" + pair.Value + "热键", () => { field.Text = ""; error.Text = ""; });
+            var reset = Ui.Icon("\uE777", "重置" + pair.Value + "热键", () =>
+            {
+                var candidate = fields.ToDictionary(p => p.Key, p => p.Value.Text.Trim());
+                candidate[pair.Key] = AppSettings.DefaultHotkeys()[pair.Key];
+                var result = keys.Validate(candidate);
+                if (result != null) { error.Text = "默认热键不可用，保持原设置。" + result; return; }
+                field.Text = candidate[pair.Key]; error.Text = "";
+            });
+            Grid.SetColumn(clear, 2); row.Children.Add(clear);
+            Grid.SetColumn(reset, 3); row.Children.Add(reset);
             Grid.SetColumn(field, 1); row.Children.Add(field); fields[pair.Key] = field; panel.Children.Add(row);
         }
         panel.Children.Add(Ui.Text("紧急恢复：" + keys.EmergencyBinding, 12, Ui.Green));
@@ -162,7 +175,11 @@ internal sealed class SettingsWindow : Window
             if (!int.TryParse(holdTime.Text, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var holdMilliseconds) || holdMilliseconds is < 100 or > 2000)
             { error.Text = "长按触发时间应为 100 至 2000 毫秒。"; return; }
             var result = apply(fields.ToDictionary(p => p.Key, p => p.Value.Text.Trim()), holdMilliseconds);
-            if (result != null) { error.Text = result; return; }
+            if (result != null)
+            {
+                foreach (var pair in fields) pair.Value.Text = settings.Hotkeys.GetValueOrDefault(pair.Key, "");
+                error.Text = result; return;
+            }
             settings.SeekSeconds = seconds;
             settings.CheckUpdatesOnStartup = startupUpdates.IsChecked == true;
             WebViewCacheSchedule.Configure(settings, autoCleanCache.IsChecked == true,

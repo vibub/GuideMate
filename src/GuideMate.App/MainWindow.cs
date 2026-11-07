@@ -84,7 +84,14 @@ public sealed partial class MainWindow : Window
             Ui.PlaceVisible(this); ApplyWindowSwitcher();
             _keys = new(this); _keys.Pressed += OnHotkey;
             _keys.TemporaryRateReleased += () => Fire(() => EndTemporaryRateAsync(true));
-            var error = _keys.Apply(_settings.Hotkeys, _settings.TemporaryHoldMilliseconds);
+            var error = _store.IsFirstRun
+                ? _keys.ApplyInitial(_settings.Hotkeys, _settings.TemporaryHoldMilliseconds)
+                : _keys.Apply(_settings.Hotkeys, _settings.TemporaryHoldMilliseconds);
+            if (_store.IsFirstRun)
+            {
+                try { _store.Save(_settings); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { _status.Text = "设置保存失败：" + ex.Message; }
+            }
             _hotkeyStatus.Text = (error ?? "全局热键已启用") + "\n紧急恢复：" + _keys.EmergencyBinding;
             if (!_keys.EmergencyAvailable) _hotkeyStatus.Text += $"（冲突 {_keys.EmergencyError}，穿透已禁用）";
             _throughToggle.IsEnabled = _keys.EmergencyAvailable;
