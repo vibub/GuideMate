@@ -29,7 +29,7 @@ public sealed partial class MainWindow : Window
     private readonly TextBlock _subtitleSource = Ui.Text("未加载字幕", 11, Ui.Muted);
     private readonly TextBlock _hotkeyStatus = Ui.Text("", 11, Ui.Muted);
     private readonly Slider _timeline = new() { Minimum = 0, Maximum = 1, Margin = new(12, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center };
-    private readonly ComboBox _rate = new() { Width = 76, Height = 36, VerticalContentAlignment = VerticalAlignment.Center, Margin = new(8, 0, 8, 0) };
+    private readonly ComboBox _rate = new() { Width = 104, Height = 36, VerticalContentAlignment = VerticalAlignment.Center, Margin = new(8, 0, 8, 0) };
     private readonly ComboBox _topmostMode = new() { Height = 36, VerticalContentAlignment = VerticalAlignment.Center, Margin = new(0, 4, 0, 4) };
     private readonly ListBox _bookmarks = new() { BorderThickness = new(0) };
     private readonly ListBox _history = new() { BorderThickness = new(0) };
@@ -115,6 +115,7 @@ public sealed partial class MainWindow : Window
         _webViewCacheTimer.Tick += async (_, _) => await TryAutoCleanWebViewCacheAsync();
         Closing += (_, _) =>
         {
+            if (_url.Length > 0) _settings.LastPage = CurrentVideo();
             _updateLifetime.Cancel();
             _webViewCacheTimer.Stop();
             CancelWindowResize(); CancelImmersiveDrag();
@@ -214,7 +215,6 @@ public sealed partial class MainWindow : Window
         follow.Children.Add(Ui.Heading("字幕触发"));
         follow.Children.Add(Ui.Toggle("战斗提示时暂停", _settings.PauseOnCombat, value => _settings.PauseOnCombat = value));
         follow.Children.Add(Ui.Toggle("战斗提示时短暂淡化", _settings.FadeOnCombat, value => _settings.FadeOnCombat = value));
-        follow.Children.Add(Ui.Command("\uE768", "打开验证样例", OpenDemo));
         follow.Children.Add(_hotkeyStatus);
         tabs.Items.Add(new TabItem { Header = "跟随", Content = new ScrollViewer { Content = follow, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled } });
         tabs.Items.Add(new TabItem { Header = "视觉", Content = BuildVisionPanel() });
@@ -257,6 +257,7 @@ public sealed partial class MainWindow : Window
         _rate.SelectionChanged += (_, _) => { if (!_syncing && _rate.SelectedItem is double rate) Fire(() => SetRateAsync(rate)); }; extra.Children.Add(_rate);
         extra.Children.Add(Ui.Icon("\uE74F", "静音 / 取消静音", () => Fire(() => CommandAsync("mute"))));
         _volume = Ui.Slider(0, 1, 0.75, value => { if (!_syncing) Fire(() => CommandAsync("volume", value)); });
+        _volume.VerticalAlignment = VerticalAlignment.Center;
         _volume.Width = 64; _volume.Margin = new(4, 0, 6, 0); extra.Children.Add(_volume);
         extra.Children.Add(Ui.Icon("\uE9A6", "聚焦网页视频", () => Fire(() => CommandAsync("focus"))));
         Grid.SetColumn(extra, 2); playback.Children.Add(extra);
@@ -366,6 +367,7 @@ public sealed partial class MainWindow : Window
             if (_closing) return;
             _saveTimer.Start(); UpdateOverlay();
             if (_initialMedia != null) NavigateMedia(_initialMedia);
+            else if (_settings.GetStartupPage() is { } page) NavigateSaved(page);
             else Navigate("https://www.bilibili.com/");
             if (_store.LoadWarning != null) _status.Text = _store.LoadWarning;
         }
@@ -518,7 +520,6 @@ public sealed partial class MainWindow : Window
         _browser.CoreWebView2.Navigate(uri.AbsoluteUri);
     }
     private static string DisplayAddress(string url) => url.Contains("guidemate.local/demo") ? "https://guidemate.local/demo.html" : url;
-    private void OpenDemo() => Navigate("https://guidemate.local/demo.html");
     private void OpenMedia()
     {
         var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "视频文件|*.mp4;*.webm;*.mkv;*.mov;*.avi|所有文件|*.*" };

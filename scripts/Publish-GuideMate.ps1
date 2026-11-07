@@ -17,6 +17,12 @@ $publishArguments = @(
 if ($Version) { $publishArguments += ('-p:Version=' + $Version.TrimStart('v')) }
 & $sdkCommand publish (Join-Path $projectRoot 'src\GuideMate.App\GuideMate.App.csproj') -c Release -r win-x64 --self-contained false @publishArguments -o $publishDirectory
 if ($LASTEXITCODE -ne 0) { throw 'GuideMate publish failed.' }
+# Remove only obsolete bundled fixtures when reusing an existing program output directory.
+foreach ($name in @('demo.html', 'demo.webm')) {
+    $obsoleteFixture = Join-Path $publishDirectory ("assets/" + $name)
+    if (Test-Path -LiteralPath $obsoleteFixture) { Remove-Item -LiteralPath $obsoleteFixture -Force }
+}
+
 $hostDirectory = Join-Path $publishDirectory 'chrome-host'
 & $sdkCommand publish (Join-Path $projectRoot 'src\GuideMate.ChromeHost\GuideMate.ChromeHost.csproj') -c Release -r win-x64 --self-contained false -p:PublishTrimmed=false @publishArguments -o $hostDirectory
 if ($LASTEXITCODE -ne 0) { throw 'GuideMate Chrome host publish failed.' }

@@ -23,6 +23,17 @@ public sealed record WindowPlacement(double Left, double Top, double Width, doub
 
 public class AppSettings
 {
+    public bool RestoreLastPageOnStartup { get; set; }
+    public SavedVideo? LastPage { get; set; }
+
+    public SavedVideo? GetStartupPage()
+    {
+        if (!RestoreLastPageOnStartup || LastPage is not { } page) return null;
+        if (page.LocalPath != null) return File.Exists(page.LocalPath) ? page : null;
+        return Uri.TryCreate(page.Url, UriKind.Absolute, out var uri)
+            && uri.Scheme is ("http" or "https") && uri.Host != "guidemate.local" ? page : null;
+    }
+
     public bool CheckUpdatesOnStartup { get; set; } = true;
     public bool AutoCleanWebViewCache { get; set; }
     public int WebViewCacheCleanupDays { get; set; } = 7;

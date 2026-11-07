@@ -17,7 +17,11 @@ internal sealed class SettingsWindow : Window
             anchors.Add((label, surface));
             return content;
         }
-        var panel = Section("全局热键", "热键");
+        var panel = Section("启动", "启动");
+        var restoreLastPage = Ui.Toggle("启动时恢复上次退出时的页面", settings.RestoreLastPageOnStartup, _ => { });
+        panel.Children.Add(restoreLastPage);
+        panel.Children.Add(Ui.Text("默认关闭，启动时打开 B 站首页；勾选并保存后恢复上次页面及已记录的播放进度。", 12, Ui.Muted));
+        panel = Section("全局热键", "热键");
         panel.Children.Add(Ui.Text("点击录制热键；X 清除，重置恢复默认值。空白表示未设置，保存后生效。", 12, Ui.Muted));
         panel.Children.Add(Ui.Text("若设置了鼠标侧键无反应，请以管理员身份运行程序。", 12, Ui.Muted));
         var names = new Dictionary<string, string> { ["PlayPause"] = "播放 / 暂停", ["SeekBack"] = "后退", ["SeekForward"] = "快进", ["RateUp"] = "加快倍速", ["RateDown"] = "降低倍速", ["ImmersiveTransparencyUp"] = "提高小窗透明度", ["ImmersiveTransparencyDown"] = "降低小窗透明度", ["SubtitleOverlay"] = "字幕浮窗开关", ["TemporaryRate"] = "长按临时倍速", ["PreviousEpisode"] = "上一集", ["NextEpisode"] = "下一集", ["Immersive"] = "沉浸模式", ["FullscreenDanmaku"] = "全屏弹幕开关", ["Hide"] = "隐藏 / 恢复", ["ClickThrough"] = "鼠标穿透" };
@@ -180,6 +184,7 @@ internal sealed class SettingsWindow : Window
                 foreach (var pair in fields) pair.Value.Text = settings.Hotkeys.GetValueOrDefault(pair.Key, "");
                 error.Text = result; return;
             }
+            settings.RestoreLastPageOnStartup = restoreLastPage.IsChecked == true;
             settings.SeekSeconds = seconds;
             settings.CheckUpdatesOnStartup = startupUpdates.IsChecked == true;
             WebViewCacheSchedule.Configure(settings, autoCleanCache.IsChecked == true,
