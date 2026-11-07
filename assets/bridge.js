@@ -73,17 +73,17 @@
       x:view.x + x * view.sx, y:view.y + y * view.sy, displayWidth:width * view.sx, displayHeight:height * view.sy,
       viewportWidth:view.width, viewportHeight:view.height};
   };
-  const captureFrame = region => {
+  const captureFrame = (region, mapDetail = false) => {
     const info = frameInfo(), video = visibleVideo();
     if (!info || info.seeking) return null;
     if (blockedCanvasKey === info.mediaKey) return {...info, method:'preview'};
     const canvas = document.createElement('canvas');
-    const scale = Math.min(1, 1280 / info.width);
-    canvas.width = region ? 160 : Math.round(info.width * scale);
-    canvas.height = region ? 160 : Math.round(info.height * scale);
+    const scale = Math.min(1, (mapDetail ? 3840 : 1280) / info.width);
+    canvas.width = region ? (mapDetail ? Math.min(1024, Math.round(region.Width * info.width)) : 160) : Math.round(info.width * scale);
+    canvas.height = region ? (mapDetail ? Math.min(1024, Math.round(region.Height * info.height)) : 160) : Math.round(info.height * scale);
     const context = canvas.getContext('2d');
     if (region) context.drawImage(video, region.X * info.width, region.Y * info.height,
-      region.Width * info.width, region.Height * info.height, 0, 0, 160, 160);
+      region.Width * info.width, region.Height * info.height, 0, 0, canvas.width, canvas.height);
     else context.drawImage(video, 0, 0, canvas.width, canvas.height);
     try { return {...info, method:'canvas', data:canvas.toDataURL('image/png')}; }
     catch (error) {

@@ -5,6 +5,8 @@ using GuideMate.Vision;
 using OpenCvSharp;
 
 var checks = 0;
+checks += MapTrackingChecks.Run();
+if (args.Contains("--map-only")) return;
 void Check(bool condition, string name)
 {
     if (!condition) throw new Exception("FAILED: " + name);

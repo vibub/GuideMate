@@ -8,10 +8,10 @@ internal sealed record OnlineVideoFrame(byte[] Image, int Width, int Height, dou
 
 public sealed partial class MainWindow
 {
-    private async Task<OnlineVideoFrame?> CaptureOnlineFrameAsync(ArrowRegion? region = null)
+    private async Task<OnlineVideoFrame?> CaptureOnlineFrameAsync(ArrowRegion? region = null, bool mapDetail = false)
     {
         if (_videoRouter == null || !IsVisible || WindowState == WindowState.Minimized || !_browser.IsVisible) return null;
-        var json = await _videoRouter.ExecuteAsync("window.guideMate?.captureFrame(" + JsonSerializer.Serialize(region) + ") ?? null");
+        var json = await _videoRouter.ExecuteAsync("window.guideMate?.captureFrame(" + JsonSerializer.Serialize(region) + "," + (mapDetail ? "true" : "false") + ") ?? null");
         using var document = JsonDocument.Parse(json);
         var info = document.RootElement;
         if (info.ValueKind != JsonValueKind.Object) return null;
@@ -41,7 +41,8 @@ public sealed partial class MainWindow
             throw new InvalidOperationException("箭头区域不完整，请把播放器滚动到可见位置。");
         using var crop = new Cv.Mat(image, new Cv.Rect(x, y, cropWidth, cropHeight));
         using var scaled = new Cv.Mat();
-        var size = region == null ? new Cv.Size(Math.Min(1280, width), (int)Math.Round(height * Math.Min(1, 1280d / width))) : new Cv.Size(160, 160);
+        var size = mapDetail ? new Cv.Size(Math.Min(3840, cropWidth), (int)Math.Round(cropHeight * Math.Min(1, 3840d / cropWidth)))
+            : region == null ? new Cv.Size(Math.Min(1280, width), (int)Math.Round(height * Math.Min(1, 1280d / width))) : new Cv.Size(160, 160);
         Cv.Cv2.Resize(crop, scaled, size);
         // A seek or navigation during CapturePreview must not relabel a stale screenshot as a new frame.
         var afterJson = await _videoRouter.ExecuteAsync("window.guideMate?.frameInfo() ?? null");

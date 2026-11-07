@@ -36,6 +36,7 @@ public sealed partial class MainWindow
             UpdateDirection();
         });
         panel.Children.Add(_visionToggle);
+        panel.Children.Add(BuildMapPanel());
         _onlineVisionTimer.Tick += async (_, _) => await SampleOnlineDirectionAsync();
         _onlineVisionTimer.Start();
         return new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };

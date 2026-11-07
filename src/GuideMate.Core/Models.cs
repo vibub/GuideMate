@@ -74,6 +74,7 @@ public class AppSettings
     public string? FfmpegPath { get; set; }
     public Dictionary<string, OnlineVisionProfile> OnlineVisionProfiles { get; set; } = [];
     public OnlineVisionProfile? OnlineVisionCalibration { get; set; }
+    public MapTrackingProfile? MapTracking { get; set; }
     public List<SavedVideo> Bookmarks { get; set; } = [];
     public List<SavedVideo> History { get; set; } = [];
     public Dictionary<string, string> Hotkeys { get; set; } = DefaultHotkeys();
