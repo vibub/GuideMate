@@ -410,17 +410,28 @@ internal sealed class NativeHotkeys : IDisposable
 
     public static void HideFromWindowSwitcher(Window window, bool hidden)
     {
-        // ShowInTaskbar alone does not exclude an unowned window from Alt+Tab.
-        window.ShowInTaskbar = !hidden;
         var hwnd = new WindowInteropHelper(window).Handle;
-        if (hwnd == 0) return;
+        if (hwnd == 0) { window.ShowInTaskbar = !hidden; return; }
         const long toolWindow = 0x80, appWindow = 0x40000;
         var style = GetWindowLongPtr(hwnd, -20).ToInt64();
         var next = hidden ? (style | toolWindow) & ~appWindow : (style | appWindow) & ~toolWindow;
-        if (style == next) return;
-        SetWindowLongPtr(hwnd, -20, (nint)next);
-        // Refresh shell-visible styles without moving, resizing, activating or reordering the window.
-        SetWindowPos(hwnd, 0, 0, 0, 0, 0, 0x0037);
+        if (style == next && window.ShowInTaskbar == !hidden) return;
+
+        // Shell 必须在最终样式下重新收到显示通知；仅刷新边框会等到激活才恢复任务栏图标。
+        // 原生隐藏不改变 WPF Visibility，也不触发托盘隐藏、资料保存或浏览器重建。
+        const uint keepPlacement = 0x0017; // NOSIZE | NOMOVE | NOZORDER | NOACTIVATE
+        var visible = IsWindowVisible(hwnd);
+        if (visible) SetWindowPos(hwnd, 0, 0, 0, 0, 0, keepPlacement | 0x0080);
+        try
+        {
+            SetWindowLongPtr(hwnd, -20, (nint)next);
+            // 先清除 TOOLWINDOW，避免 WPF 的任务栏更新仍使用旧工具窗口样式。
+            window.ShowInTaskbar = !hidden;
+        }
+        finally
+        {
+            SetWindowPos(hwnd, 0, 0, 0, 0, 0, keepPlacement | 0x0020 | (visible ? 0x0040u : 0));
+        }
     }
 
     public static void ClickThrough(Window window, bool enabled)
@@ -488,6 +499,7 @@ internal sealed class NativeHotkeys : IDisposable
     [DllImport("user32.dll")] private static extern bool UnregisterHotKey(nint hWnd, int id);
     [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int key);
     [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern bool IsWindowVisible(nint hwnd);
     [DllImport("user32.dll")] private static extern bool SetWindowPos(nint hwnd, nint after, int x, int y, int width, int height, uint flags);
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern nint GetWindowLongPtr(nint hwnd, int index);
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static extern nint SetWindowLongPtr(nint hwnd, int index, nint value);
