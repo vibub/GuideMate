@@ -20,7 +20,7 @@ internal sealed class SettingsWindow : Window
         var panel = Section("启动", "启动");
         var restoreLastPage = Ui.Toggle("启动时恢复上次退出时的页面", settings.RestoreLastPageOnStartup, _ => { });
         panel.Children.Add(restoreLastPage);
-        panel.Children.Add(Ui.Text("默认关闭，启动时打开 B 站首页；勾选并保存后恢复上次页面及已记录的播放进度。", 12, Ui.Muted));
+        panel.Children.Add(Ui.Text("默认关闭，启动时打开 B 站首页；勾选并保存后恢复上次页面及已记录的播放进度，保持暂停，手动播放后继续。", 12, Ui.Muted));
         panel = Section("全局热键", "热键");
         panel.Children.Add(Ui.Text("点击录制热键；X 清除，重置恢复默认值。空白表示未设置，保存后生效。", 12, Ui.Muted));
         panel.Children.Add(Ui.Text("若设置了鼠标侧键无反应，请以管理员身份运行程序。", 12, Ui.Muted));

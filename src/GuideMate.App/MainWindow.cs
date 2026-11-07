@@ -368,7 +368,7 @@ public sealed partial class MainWindow : Window
             if (_closing) return;
             _saveTimer.Start(); UpdateOverlay();
             if (_initialMedia != null) NavigateMedia(_initialMedia);
-            else if (_settings.GetStartupPage() is { } page) NavigateSaved(page);
+            else if (_settings.GetStartupPage() is { } page) await RestoreStartupPageAsync(page);
             else Navigate("https://www.bilibili.com/");
             if (_store.LoadWarning != null) _status.Text = _store.LoadWarning;
         }
@@ -527,6 +527,21 @@ public sealed partial class MainWindow : Window
         if (dialog.ShowDialog(this) != true || _browser.CoreWebView2 == null) return;
         NavigateMedia(dialog.FileName);
     }
+    private async Task RestoreStartupPageAsync(SavedVideo page)
+    {
+        var core = _browser.CoreWebView2;
+        var script = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "assets", "startup-pause.js"));
+        var scriptId = await core.AddScriptToExecuteOnDocumentCreatedAsync(script);
+        // Keep the guard in the restored document and its initial frames, not later navigations.
+        void Completed(object? sender, CoreWebView2NavigationCompletedEventArgs args)
+        {
+            core.RemoveScriptToExecuteOnDocumentCreated(scriptId);
+            core.NavigationCompleted -= Completed;
+        }
+        core.NavigationCompleted += Completed;
+        NavigateSaved(page);
+    }
+
     private void NavigateSaved(SavedVideo saved)
     {
         if (saved.LocalPath != null) NavigateMedia(saved.LocalPath, saved);

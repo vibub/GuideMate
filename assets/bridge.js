@@ -323,6 +323,7 @@
       if (request.action === 'previousEpisode') return episode(false);
       const video = visibleVideo() || (target?.isConnected ? target : null);
       if (!video) return false;
+      if (request.action === 'play' || request.action === 'toggle') window.guideMateAllowStartupPlayback?.();
       const value = Number(request.value);
       switch (request.action) {
         case 'play': video.play().catch(error => post({ type: 'error', message: error.message })); break;

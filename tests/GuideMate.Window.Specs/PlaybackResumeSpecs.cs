@@ -108,6 +108,28 @@ internal static class PlaybackResumeSpecs
             Program.Check(NearTime(3, true)
                 && Script("document.querySelector('iframe').contentWindow.commands.some(c => c.action === 'position')") == "false",
                 "an iframe player also retains website history without an app seek");
+            Load("video.html?beforeStartup=1", true);
+            var startupTask = (Task)Program.Invoke(window, "RestoreStartupPageAsync",
+                new SavedVideo { Url = "https://resume.guidemate.local/video.html?startup=1", Position = 6, Rate = 1.75 })!;
+            Until(() => startupTask.IsCompleted);
+            startupTask.GetAwaiter().GetResult();
+            Until(() => core.Source.EndsWith("?startup=1") && NearTime(6));
+            Script("document.querySelector('video').autoplay = true; document.querySelector('video').play()");
+            Program.Pump(900);
+            Program.Check(Script("document.querySelector('video').paused") == "true" && NearTime(6),
+                "startup restore keeps saved progress paused despite scripted autoplay");
+            Script("setTimeout(() => document.querySelector('video').play(), 200)");
+            Program.Pump(700);
+            Program.Check(Script("document.querySelector('video').paused") == "true",
+                "delayed website autoplay remains blocked");
+            Script("window.guideMate.command({action:'toggle'})");
+            Until(() => Script("document.querySelector('video').paused") == "false");
+            Program.Check(true, "explicit app playback releases startup pause");
+            Load("video.html?afterStartup=1", true);
+            Script("document.querySelector('video').play()");
+            Until(() => Script("document.querySelector('video').paused") == "false");
+            Program.Check(true, "ordinary later navigation is not subject to startup pause");
+            Script("document.querySelector('video').pause()");
             CheckAppearanceHotkeys(window, store);
             window.SaveSettings();
             var saved = store.Load();
