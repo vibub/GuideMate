@@ -43,13 +43,15 @@ internal static class Ui
         slider.ValueChanged += (_, e) => changed(e.NewValue);
         return slider;
     }
-    public static void PlaceVisible(Window window)
+    public static void PlaceVisible(Window window, bool includeTaskbar = false)
     {
         var handle = new WindowInteropHelper(window).Handle;
         if (handle == 0 || !GetWindowRect(handle, out var rect)) return;
         // Keep monitor bounds and window coordinates in physical pixels; mixed-DPI origins are not WPF DIP values.
         var bounds = System.Drawing.Rectangle.FromLTRB(rect.Left, rect.Top, rect.Right, rect.Bottom);
-        var screen = System.Windows.Forms.Screen.FromRectangle(bounds).WorkingArea;
+        var monitor = System.Windows.Forms.Screen.FromRectangle(bounds);
+        // 沉浸小窗允许覆盖任务栏，恢复时只按完整屏幕纠正越界位置。
+        var screen = includeTaskbar ? monitor.Bounds : monitor.WorkingArea;
         var left = Math.Clamp(rect.Left, screen.Left, Math.Max(screen.Left, screen.Right - bounds.Width));
         var top = Math.Clamp(rect.Top, screen.Top, Math.Max(screen.Top, screen.Bottom - bounds.Height));
         SetWindowPos(handle, 0, left, top, 0, 0, 0x0015);

@@ -61,7 +61,7 @@ internal static class Program
             BrowserCacheSpecs.Run(args[1]);
             return;
         }
-        if (args.Length != 2 || args[0] != "--desktop")
+        if (args.Length != 2 || (args[0] != "--desktop" && args[0] != "--placement"))
             throw new ArgumentException("Pass --desktop and a new isolated output directory; this check opens temporary desktop windows.");
         var output = Path.GetFullPath(args[1]);
         if (Directory.Exists(output)) throw new ArgumentException("Use a new test directory.");
@@ -107,8 +107,11 @@ internal static class Program
             var overlay = Field<Window>(window, "_overlay");
             Check(overlay.IsVisible && Near(overlay.Width, 620) && overlay.SizeToContent == SizeToContent.Height,
                 "subtitle restores saved width while retaining automatic height");
-            SubtitlePointerSpecs.Run(window, overlay, output);
-            ImmersivePointerSpecs.Run(window);
+            if (args[0] != "--placement")
+            {
+                SubtitlePointerSpecs.Run(window, overlay, output);
+                ImmersivePointerSpecs.Run(window);
+            }
             overlay.Left = 240; overlay.Top = 140; overlay.Width = 780;
             Field<Action?>(overlay, "PlacementChanged")?.Invoke();
             Check(store.Load().OverlayWidth == 780 && Near(store.Load().OverlayLeft, 240),
@@ -119,6 +122,46 @@ internal static class Program
             window.SaveSettings();
             Check(store.Load().ImmersiveBounds is { } savedBounds && Near(savedBounds.Left, 310) && Near(savedBounds.Top, 240)
                 && Near(savedBounds.Width, 800) && Near(savedBounds.Height, 450), "immersive actual geometry saves");
+            // 四角覆盖任务栏在任意边缘的情况，比较原生像素坐标避免 DPI 换算误差。
+            var placementHandle = new WindowInteropHelper(window).Handle;
+            var placementScreen = System.Windows.Forms.Screen.FromHandle(placementHandle).Bounds;
+            var placementSize = Bounds(window);
+            foreach (var corner in new[] {
+                new Point(placementScreen.Left, placementScreen.Top),
+                new Point(placementScreen.Right - placementSize.Width, placementScreen.Top),
+                new Point(placementScreen.Left, placementScreen.Bottom - placementSize.Height),
+                new Point(placementScreen.Right - placementSize.Width, placementScreen.Bottom - placementSize.Height) })
+            {
+                SetWindowPos(placementHandle, 0, (int)corner.X, (int)corner.Y, 0, 0, 0x0015); Pump(60);
+                var expectedPlacement = Bounds(window);
+                Invoke(window, "ToggleImmersive"); Pump(60);
+                Invoke(window, "ToggleImmersive"); Pump(60);
+                var restoredPlacement = Bounds(window);
+                Check(Near(restoredPlacement.Left, expectedPlacement.Left) && Near(restoredPlacement.Top, expectedPlacement.Top)
+                    && Near(restoredPlacement.Width, expectedPlacement.Width) && Near(restoredPlacement.Height, expectedPlacement.Height),
+                    "immersive re-entry preserves screen-edge placement including the taskbar area");
+            }
+            SetWindowPos(placementHandle, 0, placementScreen.Right - 40, placementScreen.Bottom - 40, 0, 0, 0x0015); Pump(60);
+            Invoke(window, "ToggleImmersive"); Pump(60);
+            Invoke(window, "ToggleImmersive"); Pump(60);
+            var correctedPlacement = Bounds(window);
+            Check(correctedPlacement.Left >= placementScreen.Left && correctedPlacement.Top >= placementScreen.Top
+                && correctedPlacement.Left + correctedPlacement.Width <= placementScreen.Right + 1
+                && correctedPlacement.Top + correctedPlacement.Height <= placementScreen.Bottom + 1,
+                "immersive re-entry still brings off-screen placement back onto the full monitor");
+            if (args[0] == "--placement")
+            {
+                window.Close(); window = null; Pump(60);
+                window = Open();
+                Invoke(window, "ToggleImmersive"); Pump(80);
+                var reloadedPlacement = Bounds(window);
+                Check(Near(reloadedPlacement.Left, correctedPlacement.Left) && Near(reloadedPlacement.Top, correctedPlacement.Top),
+                    "reloaded profile preserves immersive placement overlapping the taskbar");
+                Check(store.Load().Bookmarks[0].Position == 42, "placement saving preserves the video library");
+                Console.WriteLine("Isolated desktop placement checks passed; no physical hotkey or game test.");
+                return;
+            }
+            window.Left = 310; window.Top = 240; Pump(60); window.SaveSettings();
             window.WindowState = WindowState.Minimized; Pump(50); window.SaveSettings();
             Check(!overlay.IsVisible && store.Load().SubtitleOverlay,
                 "minimizing immersive mode hides subtitles without switching the preference off");
@@ -406,6 +449,8 @@ internal static class Program
     private struct NativeRect { public int Left, Top, Right, Bottom; }
     [DllImport("user32.dll")]
     private static extern bool GetWindowRect(nint window, out NativeRect rect);
+    [DllImport("user32.dll")]
+    private static extern bool SetWindowPos(nint window, nint after, int x, int y, int width, int height, uint flags);
     internal static WindowPlacement Bounds(Window window)
     {
         if (!GetWindowRect(new WindowInteropHelper(window).Handle, out var rect)) throw new InvalidOperationException("native bounds unavailable");

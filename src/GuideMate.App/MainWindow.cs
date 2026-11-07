@@ -697,7 +697,7 @@ public sealed partial class MainWindow : Window
             Width = Math.Max(MinWidth, bounds.Width); Height = Math.Max(MinHeight, bounds.Height);
             Left = bounds.Left; Top = bounds.Top;
             ApplyImmersiveAspectRatio();
-            Ui.PlaceVisible(this);
+            Ui.PlaceVisible(this, includeTaskbar: true);
             Fire(() => CommandAsync("focusOn"));
         }
         else
