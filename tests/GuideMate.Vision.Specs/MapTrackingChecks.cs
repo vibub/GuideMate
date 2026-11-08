@@ -39,6 +39,15 @@ internal static class MapTrackingChecks
         Cv2.Circle(covered, new(120, 120), 18, Scalar.White, -1);
         var masked = locator.Locate(covered);
         Check(masked != null && Distance(masked.Position, new(480, 370)) < 3, "中心玩家图标不影响定位");
+        using var coast = guide.Clone();
+        Cv2.Rectangle(coast, new Rect(0, 0, 160, 240), new Scalar(90, 110, 70), -1);
+        var coastFix = locator.Locate(coast);
+        Check(coastFix != null && Distance(coastFix.Position, new(480, 370)) < 3,
+            "大面积无纹理海水时以单侧二维地形定位");
+        using var narrowStrip = guide.Clone();
+        Cv2.Rectangle(narrowStrip, new Rect(0, 0, 180, 240), new Scalar(90, 110, 70), -1);
+        Cv2.Rectangle(narrowStrip, new Rect(196, 0, 44, 240), new Scalar(90, 110, 70), -1);
+        Check(locator.Locate(narrowStrip) == null, "近乎直线的狭窄地形不能放宽空间分布检查");
         Check(locator.Locate(covered, true) == null, "无玩家箭头的大地图或过场不显示标记");
         using var hud = guide.Clone();
         Cv2.FillPoly(hud, [new Point[] { new(120, 108), new(129, 131), new(120, 125), new(111, 131) }], new Scalar(255, 220, 20));

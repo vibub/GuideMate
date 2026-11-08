@@ -154,7 +154,18 @@ public sealed class MapLocator : IDisposable
         if (best == null || bestInliers.Length < 12 || bestInliers.Length < pairs.Length * .55) return null;
         var accepted = bestInliers.Select(i => pairs[i]).ToArray();
         if (accepted.Max(p => p.Q.X) - accepted.Min(p => p.Q.X) < radius * .7
-            || accepted.Max(p => p.Q.Y) - accepted.Min(p => p.Q.Y) < radius * .7) return null;
+            || accepted.Max(p => p.Q.Y) - accepted.Min(p => p.Q.Y) < radius * .7)
+        {
+            // 海岸一侧是无纹理海水：允许单侧地形，但要求更多内点和更高一致性，且不能退化成线。
+            if (accepted.Length < 24 || accepted.Length < pairs.Length * .85) return null;
+            var mx = accepted.Average(p => p.Q.X); var my = accepted.Average(p => p.Q.Y);
+            var xx = accepted.Average(p => Math.Pow(p.Q.X - mx, 2));
+            var yy = accepted.Average(p => Math.Pow(p.Q.Y - my, 2));
+            var xy = accepted.Average(p => (p.Q.X - mx) * (p.Q.Y - my));
+            var spread = Math.Sqrt(Math.Pow(xx - yy, 2) + 4 * xy * xy);
+            if ((xx + yy - spread) / 2 < Math.Pow(radius * .08, 2)
+                || (xx + yy + spread) / 2 < Math.Pow(radius * .25, 2)) return null;
+        }
         // 使用所有内点最小二乘精修，不依赖额外的原生 calib3d 模块。
         var qx = accepted.Average(p => p.Q.X); var qy = accepted.Average(p => p.Q.Y);
         var ax = accepted.Average(p => p.T.X); var ay = accepted.Average(p => p.T.Y);

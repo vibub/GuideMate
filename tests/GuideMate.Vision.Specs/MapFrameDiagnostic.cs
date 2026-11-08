@@ -3,6 +3,25 @@ using OpenCvSharp;
 
 internal static class MapFrameDiagnostic
 {
+    public static async Task RunClipAsync(string video, string resources, double center)
+    {
+        using var locator = new MapLocator(resources);
+        using var tracker = new MinimapTracker();
+        var found = 0;
+        for (var i = 0; i < 9; i++)
+        {
+            var time = Math.Max(0, center - 2) + i * .5;
+            using var frame = Cv2.ImDecode(await VideoAnalysis.PreviewAsync(VideoAnalysis.FindFfmpeg()!, video, time), ImreadModes.Color);
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var result = tracker.Locate(frame, locator, true, false, i * 500);
+            var elapsed = watch.ElapsedMilliseconds;
+            if (result != null) found++;
+            Console.WriteLine($"clip time={time:F1}s found={result != null} state={tracker.MatchState} recognitionMs={elapsed} position={result?.Location.Position}");
+        }
+        Console.WriteLine($"clip located={found}/9; no ground-truth position; decoding/capture excluded; not live FPS");
+        if (found != 9) throw new Exception("指定短片段仍有定位丢失");
+    }
+
     public static void Run(string imagePath, string resources)
     {
         using var frame = Cv2.ImRead(imagePath);

@@ -5,6 +5,11 @@ using GuideMate.Vision;
 using OpenCvSharp;
 
 var checks = 0;
+if (args.Length == 4 && args[0] == "--map-clip")
+{
+    await MapFrameDiagnostic.RunClipAsync(args[1], args[2], double.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture));
+    return;
+}
 if (args.Length == 3 && args[0] == "--map-frame")
 {
     MapFrameDiagnostic.Run(args[1], args[2]);
