@@ -31,8 +31,13 @@ public sealed partial class MainWindow
         panel.Children.Add(Ui.Text("默认使用提瓦特地表地图，首次启动自动下载约 206 MiB，后续离线使用。北向固定，游戏地图需无遮挡。", 12, Ui.Muted));
         panel.Children.Add(Ui.Command("\uE707", "使用内置提瓦特地表地图", UseBuiltInMap));
         panel.Children.Add(Ui.Command("\uE8B7", "导入自定义底图（可选）", ImportMapAtlas));
-        panel.Children.Add(Ui.Command("\uE714", "1. 框选攻略完整小地图", CalibrateGuideMap));
-        panel.Children.Add(Ui.Command("\uE714", "2. 框选游戏完整小地图", CalibrateGameMap));
+        panel.Children.Add(Ui.Toggle("自动寻找攻略和游戏小地图", _settings.AutoDetectMinimaps, value =>
+        {
+            StopMapTracking(); _settings.AutoDetectMinimaps = value; SaveSettings();
+            _mapStatus.Text = value ? "自动识别已启用，点击启动即可；手动选区仍保留。" : "已切换手动选区，请确认两路选区后启动。";
+        }));
+        panel.Children.Add(Ui.Command("\uE714", "手动校准攻略小地图（备用）", CalibrateGuideMap));
+        panel.Children.Add(Ui.Command("\uE714", "手动校准游戏小地图（备用）", CalibrateGameMap));
         panel.Children.Add(Ui.Command("\uE768", "启动地图跟随", StartMapTracking));
         panel.Children.Add(Ui.Command("\uE71A", "停止地图跟随", StopMapTracking));
         panel.Children.Add(_mapStatus);
@@ -43,7 +48,7 @@ public sealed partial class MainWindow
             if (!_mapRunning || !IsVisible || WindowState == WindowState.Minimized || _videoSeeking
                 || _mapMediaKey != _mediaKey || _mapVideoGeneration != _onlineGeneration || GameMapCapture.ForegroundGame() != _mapGameHandle
                 || Environment.TickCount64 - _mapLastUpdate > 1200
-                || (_settings.MapTracking?.GameRegion is { } region && GameMapCapture.Bounds(_mapGameHandle, region) != _mapBounds))
+                || GameMapCapture.Bounds(_mapGameHandle, _settings.AutoDetectMinimaps ? null : _settings.MapTracking?.GameRegion) != _mapBounds)
                 _mapMarker?.Hide();
         };
         Closed += (_, _) => { StopMapTracking(); _mapMarker?.Close(); _mapMarker = null; };
@@ -123,8 +128,8 @@ public sealed partial class MainWindow
     private async void StartMapTracking()
     {
         if (!CanConfigureMap()) return;
-        var profile = _settings.MapTracking;
-        if (profile?.GuideRegion is not { IsValid: true } || profile.GameRegion is not { IsValid: true })
+        var profile = _settings.MapTracking ?? new MapTrackingProfile("", null, null);
+        if (!_settings.AutoDetectMinimaps && (profile.GuideRegion is not { IsValid: true } || profile.GameRegion is not { IsValid: true }))
         { _mapStatus.Text = "请先分别保存攻略和游戏的小地图选区。"; return; }
         if (!string.IsNullOrEmpty(profile.AtlasPath) && !File.Exists(profile.AtlasPath))
         { _mapStatus.Text = "自定义底图不存在，请重新导入或选择内置提瓦特地图。"; return; }
@@ -175,11 +180,12 @@ public sealed partial class MainWindow
         if (_closing || !IsVisible || WindowState == WindowState.Minimized || _videoSeeking || GameMapCapture.ForegroundGame() == 0)
         { RejectMapSample("等待前台游戏和可见攻略画面…"); return; }
         _mapBusy = true; var generation = _mapGeneration; var key = _mediaKey; var videoGeneration = _onlineGeneration;
-        var locator = _mapLocator; var profile = _settings.MapTracking!;
+        var locator = _mapLocator; var profile = _settings.MapTracking;
+        var automatic = _settings.AutoDetectMinimaps;
         try
         {
-            var guide = await CaptureOnlineFrameAsync(profile.GuideRegion, true);
-            var game = GameMapCapture.Capture(profile.GameRegion);
+            var guide = await CaptureOnlineFrameAsync(automatic ? null : profile?.GuideRegion, true);
+            var game = GameMapCapture.Capture(automatic ? null : profile?.GameRegion);
             if (guide == null || game == null) { RejectMapSample("暂无完整地图画面。"); return; }
             var now = Environment.TickCount64;
             if (_mapMediaKey != key || _mapVideoGeneration != videoGeneration || Math.Abs(guide.Time - _mapVideoTime) > Math.Max(1, (now - _mapSampleTime) / 1000d * _settings.Rate + .5))
@@ -189,19 +195,27 @@ public sealed partial class MainWindow
             {
                 using var guideImage = Cv.Cv2.ImDecode(guide.Image, Cv.ImreadModes.Color);
                 using var gameImage = Cv.Cv2.ImDecode(game.Image, Cv.ImreadModes.Color);
-                return (Guide: locator.Locate(guideImage, true), Game: locator.Locate(gameImage, true));
+                MinimapObservation? Locate(Cv.Mat image, bool gameHud = false)
+                {
+                    if (automatic) return MinimapDetector.Locate(image, locator, gameHud);
+                    var position = locator.Locate(image, true);
+                    return position == null ? null : new(new(0, 0, image.Width, image.Height), position);
+                }
+                return (Guide: Locate(guideImage), Game: Locate(gameImage, true));
             });
             if (_closing || !_mapRunning || generation != _mapGeneration) return;
             if (key != _mediaKey || videoGeneration != _onlineGeneration || _videoSeeking || !IsVisible || WindowState == WindowState.Minimized
-                || GameMapCapture.ForegroundGame() != game.Handle || GameMapCapture.Bounds(game.Handle, profile.GameRegion) != game.Bounds
+                || GameMapCapture.ForegroundGame() != game.Handle || GameMapCapture.Bounds(game.Handle, automatic ? null : profile?.GameRegion) != game.Bounds
                 || Environment.TickCount64 - now > 1200 || Math.Abs(_position - guide.Time) > Math.Max(1.2, _settings.Rate * 1.2))
             { RejectMapSample("画面已变化，正在重新定位…"); return; }
-            var guidePosition = _guideConfirmation.Accept(result.Guide);
-            var gamePosition = _gameConfirmation.Accept(result.Game);
+            var guidePosition = _guideConfirmation.Accept(result.Guide?.Location);
+            var gamePosition = _gameConfirmation.Accept(result.Game?.Location);
             if (guidePosition == null || gamePosition == null)
             { _mapMarker?.Hide(); _mapStatus.Text = $"定位中 · 攻略{(result.Guide == null ? "未识别" : "待确认")} · 游戏{(result.Game == null ? "未识别" : "待确认")}"; return; }
             _mapBounds = game.Bounds; _mapGameHandle = game.Handle; _mapLastUpdate = now;
-            _mapMarker!.Update(game.Bounds, gamePosition, guidePosition.Position);
+            var region = result.Game!.Region;
+            var markerBounds = new System.Drawing.Rectangle(game.Bounds.X + region.X, game.Bounds.Y + region.Y, region.Width, region.Height);
+            _mapMarker!.Update(markerBounds, gamePosition, guidePosition.Position);
             _mapStatus.Text = $"攻略 ({guidePosition.Position.X:0}, {guidePosition.Position.Y:0}) · 玩家 ({gamePosition.Position.X:0}, {gamePosition.Position.Y:0}) · 底图像素坐标";
         }
         catch (Exception ex) { RejectMapSample("地图识别失败：" + ex.Message); }

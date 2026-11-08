@@ -5,6 +5,11 @@ using GuideMate.Vision;
 using OpenCvSharp;
 
 var checks = 0;
+if (args.Length == 3 && args[0] == "--auto-map-video")
+{
+    await AutoMapVideoChecks.RunAsync(args[1], args[2]);
+    return;
+}
 if (args.Length == 3 && args[0] == "--built-in-map")
 {
     await BuiltInMapChecks.RunAsync(args[1], args[2]);

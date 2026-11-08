@@ -49,12 +49,31 @@ internal static class MapTrackingChecks
         for (var i = 0; i < 300; i++) Cv2.Line(unrelated, new(random.Next(240), random.Next(240)), new(random.Next(240), random.Next(240)), Scalar.White, 1);
         Check(locator.Locate(unrelated) == null, "无关场景不产生位置");
         var confirmation = new MapTrackConfirmation();
+        var offset = locator.Locate(guide, playerPixel: new(80, 100));
+        Check(offset != null && Distance(offset.Position, new(440, 350)) < 2, "裁切偏心玩家使用实际箭头坐标");
+        var shifted = new MapLocation(1, 0, 360, 250, 240, 240, 1) { PlayerPixel = new(80, 100) };
+        var recropped = new MapLocation(1, 0, 400, 270, 160, 180, 1) { PlayerPixel = new(40, 80) };
+        Check(confirmation.Accept(shifted) == null && confirmation.Accept(recropped) != null, "选区改变但玩家世界坐标不变可确认");
+        confirmation.Reset();
+        using var autoBlank = new Mat(720, 1280, MatType.CV_8UC3, Scalar.Black);
+        Check(MinimapDetector.FindCandidates(autoBlank).Count == 0, "自动模式拒绝空画面");
+        Cv2.Circle(autoBlank, new(150, 150), 20, new Scalar(255, 220, 20), -1);
+        Check(MinimapDetector.FindCandidates(autoBlank).Count == 0, "自动模式拒绝圆形青色图标");
+        foreach (var center in new[] { new Point(140, 140), new Point(640, 360) })
+        {
+            autoBlank.SetTo(Scalar.Black);
+            Cv2.Circle(autoBlank, center, 100, Scalar.White, 2);
+            Cv2.FillPoly(autoBlank, [new Point[] { new(center.X, center.Y - 14), new(center.X + 11, center.Y + 14), new(center.X, center.Y + 7), new(center.X - 11, center.Y + 14) }], new Scalar(255, 220, 20));
+            var candidates = MinimapDetector.FindCandidates(autoBlank);
+            Check(candidates.Any(c => Distance(new(c.Region.X + c.Player.X, c.Region.Y + c.Player.Y), new(center.X, center.Y)) < 4), "自动寻找不同位置的玩家箭头 " + center);
+            Check(candidates.Any(c => MinimapDetector.IsGameHudCandidate(c, 1280, 720)) == (center.X == 140), "游戏 HUD 限定左上角 " + center);
+        }
         Check(confirmation.Accept(guideFix) == null && confirmation.Accept(guideFix) != null, "必须连续两帧确认");
         Check(confirmation.Accept(guideFix with { Tx = guideFix.Tx + 500 }) == null, "拒绝单帧远距离跳变");
         Check(confirmation.Accept(null) == null && confirmation.Accept(guideFix) == null, "丢失后必须重新确认");
         confirmation.Reset(); Check(confirmation.Accept(guideFix) == null, "切集后清空跟踪");
         var old = JsonSerializer.Deserialize<AppSettings>("{\"Hotkeys\":{\"PlayPause\":\"Mouse4\"},\"Opacity\":0.7}")!;
-        Check(old.MapTracking == null && old.Hotkeys["PlayPause"] == "Mouse4" && old.Opacity == .7, "旧资料不重置热键和透明度");
+        Check(old.AutoDetectMinimaps && old.MapTracking == null && old.Hotkeys["PlayPause"] == "Mouse4" && old.Opacity == .7, "旧资料默认自动检测且不重置热键和透明度");
         old.MapTracking = new("map.png", new(.1, .1, .2, .2), new(.05, .05, .1, .1));
         var roundtrip = JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(old))!;
         Check(roundtrip.MapTracking == old.MapTracking && roundtrip.Hotkeys["PlayPause"] == "Mouse4", "地图配置保存且保留原热键");

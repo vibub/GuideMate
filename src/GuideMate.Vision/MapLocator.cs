@@ -59,7 +59,7 @@ public sealed class MapLocator : IDisposable
         catch { Dispose(); throw; }
     }
 
-    public MapLocation? Locate(Mat minimap, bool requirePlayerArrow = false)
+    public MapLocation? Locate(Mat minimap, bool requirePlayerArrow = false, MapPoint? playerPixel = null)
     {
         if (minimap.Empty() || minimap.Width < 96 || minimap.Height < 96) return null;
         if (requirePlayerArrow)
@@ -71,7 +71,7 @@ public sealed class MapLocator : IDisposable
         }
         using var gray = Gray(minimap);
         using var mask = new Mat(gray.Size(), MatType.CV_8UC1, Scalar.Black);
-        var center = new Point(gray.Width / 2, gray.Height / 2);
+        var center = playerPixel is { } player ? new Point((int)player.X, (int)player.Y) : new Point(gray.Width / 2, gray.Height / 2);
         var radius = Math.Min(gray.Width, gray.Height) / 2;
         Cv2.Circle(mask, center, (int)(radius * .88), Scalar.White, -1);
         Cv2.Circle(mask, center, (int)(radius * .17), Scalar.Black, -1);
@@ -126,7 +126,7 @@ public sealed class MapLocator : IDisposable
         }
         var ra = real / denominator; var rb = imaginary / denominator;
         var result = new MapLocation(ra, rb, ax - ra * qx + rb * qy, ay - rb * qx - ra * qy,
-            gray.Width, gray.Height, (double)accepted.Length / pairs.Length);
+            gray.Width, gray.Height, (double)accepted.Length / pairs.Length) { PlayerPixel = playerPixel };
         var position = result.Position;
         return position.X >= 0 && position.Y >= 0 && position.X < _size.Width && position.Y < _size.Height ? result : null;
     }

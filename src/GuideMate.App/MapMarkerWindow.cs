@@ -28,10 +28,12 @@ internal sealed class MapMarkerWindow : Window
         var dpi = GetDpiForWindow(_handle) / 96d;
         var w = bounds.Width / dpi; var h = bounds.Height / dpi;
         var x = p.X / game.Width * w; var y = p.Y / game.Height * h;
-        var dx = x - w / 2; var dy = y - h / 2;
-        var length = Math.Sqrt(dx * dx + dy * dy); var radius = Math.Min(w, h) * .40;
+        var anchor = game.PlayerPixel ?? new MapPoint(game.Width / 2d, game.Height / 2d);
+        var cx = anchor.X / game.Width * w; var cy = anchor.Y / game.Height * h;
+        var dx = x - cx; var dy = y - cy;
+        var length = Math.Sqrt(dx * dx + dy * dy); var radius = Math.Min(Math.Min(cx, w - cx), Math.Min(cy, h - cy)) * .8;
         var outside = length > radius;
-        if (outside) { x = w / 2 + dx / length * radius; y = h / 2 + dy / length * radius; }
+        if (outside) { x = cx + dx / length * radius; y = cy + dy / length * radius; }
         _canvas.Children.Clear();
         Shape marker = outside
             ? new Polygon { Points = new PointCollection { new(0, -8), new(-6, 6), new(6, 6) },
