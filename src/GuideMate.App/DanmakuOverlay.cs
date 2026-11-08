@@ -8,7 +8,7 @@ using System.Windows.Threading;
 
 namespace GuideMate.App;
 
-internal sealed record DanmakuState(bool Visible, Rectangle Bounds, double Area, double Opacity,
+internal sealed record DanmakuState(bool Visible, Rectangle Bounds, long VideoWindow, bool RestoreVideoTopmost, double Area, double Opacity,
     double FontScale, double Speed, JsonElement Items, double Time, bool Paused, double Rate, int Generation, long Snapshot);
 
 // Keep source ingestion and glyph uploads away from the video UI process.
@@ -130,7 +130,18 @@ internal sealed class DanmakuOverlay : IDisposable
         private void Apply(DanmakuState state)
         {
             var window = _window;
-            if (!state.Visible) { window.Hide(); _snapshot = -1; return; }
+            if (!state.Visible)
+            {
+                var wasVisible = window.IsVisible;
+                window.Hide();
+                // Hiding the full-screen topmost HWND can put Explorer's taskbar above
+                // an immersive video window that overlaps the taskbar. Restore its
+                // existing topmost order only after the renderer has actually hidden.
+                if (wasVisible && state.RestoreVideoTopmost)
+                    DanmakuWindow.RestoreVideoTopmost(state.VideoWindow);
+                _snapshot = -1;
+                return;
+            }
             var showing = !window.IsVisible;
             if (showing) window.Show();
             var appearance = (state.Bounds, state.Area, state.Opacity, state.FontScale, state.Speed);

@@ -28,7 +28,10 @@ public sealed partial class MainWindow
             _danmakuOverlay.Failed += message => Dispatcher.BeginInvoke(() => _status.Text = message);
         }
         var screen = visible ? System.Windows.Forms.Screen.FromHandle(new WindowInteropHelper(this).Handle).Bounds : default;
-        _danmakuOverlay.SetState(new(visible, screen, _settings.DanmakuDisplayArea, _settings.DanmakuOpacity,
+        var restoreVideoTopmost = !visible && _immersive && IsVisible && WindowState != WindowState.Minimized
+            && _settings.ShouldBeTopmost(true);
+        _danmakuOverlay.SetState(new(visible, screen, new WindowInteropHelper(this).Handle.ToInt64(),
+            restoreVideoTopmost, _settings.DanmakuDisplayArea, _settings.DanmakuOpacity,
             _settings.DanmakuFontScale, _settings.DanmakuSpeed, _danmakuItems, _position,
             _paused || _danmakuSeeking, _danmakuRate, _danmakuGeneration, _danmakuSnapshot));
     }

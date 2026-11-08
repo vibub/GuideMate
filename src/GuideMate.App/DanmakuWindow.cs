@@ -47,6 +47,13 @@ internal sealed class DanmakuWindow
         Clear();
     }
 
+    public static void RestoreVideoTopmost(long videoWindow)
+    {
+        if (videoWindow == 0 || !IsWindowVisible((nint)videoWindow) || IsIconic((nint)videoWindow)) return;
+        // Reassert HWND_TOPMOST without moving, sizing or activating the video window.
+        SetWindowPos((nint)videoWindow, -1, 0, 0, 0, 0, 0x0013);
+    }
+
     public void Close()
     {
         IsVisible = false;
@@ -110,6 +117,8 @@ internal sealed class DanmakuWindow
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern nint DefWindowProc(nint hwnd, uint message, nint wParam, nint lParam);
     [DllImport("user32.dll")] private static extern bool ValidateRect(nint hwnd, nint rect);
     [DllImport("user32.dll")] private static extern bool ShowWindow(nint hwnd, int command);
+    [DllImport("user32.dll")] private static extern bool IsWindowVisible(nint hwnd);
+    [DllImport("user32.dll")] private static extern bool IsIconic(nint hwnd);
     [DllImport("user32.dll")] private static extern bool DestroyWindow(nint hwnd);
     [DllImport("user32.dll")] private static extern uint GetDpiForWindow(nint hwnd);
     [DllImport("user32.dll", SetLastError = true)] private static extern bool SetLayeredWindowAttributes(nint hwnd, uint color, byte alpha, uint flags);

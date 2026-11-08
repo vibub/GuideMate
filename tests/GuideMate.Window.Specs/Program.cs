@@ -36,6 +36,11 @@ internal static class Program
             TaskbarSpecs.Run();
             return;
         }
+        if (args.Length == 1 && args[0] == "--danmaku-taskbar")
+        {
+            TaskbarSpecs.RunDanmakuTopmost();
+            return;
+        }
         if (args.Length == 1 && args[0] == "--subtitle-capture")
         {
             SubtitlePointerSpecs.RunCaptureChecks();

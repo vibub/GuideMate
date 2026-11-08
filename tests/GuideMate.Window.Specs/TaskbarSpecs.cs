@@ -56,11 +56,49 @@ internal static class TaskbarSpecs
         finally { window.Close(); foreground.Close(); app.Shutdown(); }
         Console.WriteLine("Taskbar native notification checks passed; Explorer taskbar visuals and physical hotkeys are not asserted.");
     }
+    internal static void RunDanmakuTopmost()
+    {
+        var app = new System.Windows.Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        var video = new Window { Title = "置顶小窗回归", Left = 80, Top = 80, Width = 360, Height = 220,
+            Topmost = true, ShowActivated = false, ShowInTaskbar = false };
+        var fullscreen = new Window { Title = "全屏弹幕层回归", Left = 80, Top = 80, Width = 360, Height = 220,
+            Topmost = true, ShowActivated = false, ShowInTaskbar = false };
+        try
+        {
+            video.Show(); fullscreen.Show(); Program.Pump(80);
+            var videoHandle = new WindowInteropHelper(video).Handle;
+            var fullscreenHandle = new WindowInteropHelper(fullscreen).Handle;
+            Program.Check(IsAbove(fullscreenHandle, videoHandle), "full-screen topmost layer starts above video");
+            fullscreen.Hide();
+            RestoreVideoTopmost(videoHandle);
+            Program.Pump(80);
+            Program.Check(IsAbove(videoHandle, fullscreenHandle) && video.IsVisible && video.Topmost,
+                "hiding full-screen layer restores video topmost order without changing its policy");
+            video.WindowState = WindowState.Minimized;
+            RestoreVideoTopmost(videoHandle);
+            Program.Check(video.WindowState == WindowState.Minimized, "minimized video is not restored by z-order repair");
+        }
+        finally { fullscreen.Close(); video.Close(); app.Shutdown(); }
+        Console.WriteLine("Danmaku/taskbar z-order checks passed; Explorer visuals, physical hotkeys and game foreground are not asserted.");
+    }
     private static void SetExcluded(Window window, bool hidden) => typeof(MainWindow).Assembly.GetType("GuideMate.App.NativeHotkeys")!.GetMethod("HideFromWindowSwitcher")!.Invoke(null, [window, hidden]);
+    private static void RestoreVideoTopmost(nint handle) => typeof(MainWindow).Assembly.GetType("GuideMate.App.DanmakuWindow")!
+        .GetMethod("RestoreVideoTopmost")!.Invoke(null, [handle.ToInt64()]);
+    private static bool IsAbove(nint first, nint second)
+    {
+        for (var current = GetTopWindow(0); current != 0; current = GetWindow(current, 2))
+        {
+            if (current == first) return true;
+            if (current == second) return false;
+        }
+        return false;
+    }
     [StructLayout(LayoutKind.Sequential)]
     private struct WindowPos { public nint Handle, After; public int X, Y, Width, Height; public uint Flags; }
     [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(nint hwnd);
+    [DllImport("user32.dll")] private static extern nint GetTopWindow(nint hwnd);
+    [DllImport("user32.dll")] private static extern nint GetWindow(nint hwnd, uint command);
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern nint GetWindowLongPtr(nint hwnd, int index);
 }
 
