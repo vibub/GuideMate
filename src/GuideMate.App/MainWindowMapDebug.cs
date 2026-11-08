@@ -5,7 +5,8 @@ namespace GuideMate.App;
 public sealed partial class MainWindow
 {
     private MapDebugLog? _mapDebug;
-    private readonly TextBlock _mapDebugStatus = Ui.Text("调试默认关闭；仅本次运行生效。日志不包含截图、网址或账号资料。", 12, Ui.Muted);
+    private Button? _mapDebugButton;
+    private readonly TextBlock _mapDebugStatus = Ui.Text("未记录，仅本次运行生效。", 12, Ui.Muted);
     private string? _mapDebugDisplayState;
     private bool? _mapDebugVisible;
     private string MapDebugDirectory => Path.Combine(_dataPath, "Logs", "MapTracking");
@@ -19,15 +20,33 @@ public sealed partial class MainWindow
             try
             {
                 _mapDebug = new(MapDebugDirectory);
-                _mapDebugStatus.Text = "正在记录：" + _mapDebug.FilePath;
+                _mapDebugStatus.Text = "正在记录，不含截图或账号资料。";
                 TraceMap("debug_enabled", new { running = _mapRunning, automatic = _settings.AutoDetectMinimaps,
                     guideIntervalMs = _guideMapTimer.Interval.TotalMilliseconds, gameIntervalMs = _mapTimer.Interval.TotalMilliseconds });
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             { _mapDebugStatus.Text = $"无法创建日志（{ex.GetType().Name}），请检查资料目录权限。"; }
         }
-        else _mapDebugStatus.Text = previous == null ? "调试记录已关闭。" : "已停止记录，日志保留在：" + previous.FilePath;
+        else _mapDebugStatus.Text = previous == null ? "调试记录已关闭。" : "已停止，日志已保留。";
+        UpdateMapDebugButton();
+        if (_mapDebug is { } current) ObserveMapDebugCompletion(current);
         if (previous != null) await previous.Completion;
+    }
+
+    private void UpdateMapDebugButton()
+    {
+        if (_mapDebugButton != null)
+            SetMapButtonLabel(_mapDebugButton, _mapDebug == null ? "\uE7C8" : "\uE71A",
+                _mapDebug == null ? "开始记录日志" : "停止记录日志");
+    }
+
+    private async void ObserveMapDebugCompletion(MapDebugLog log)
+    {
+        await log.Completion;
+        if (!ReferenceEquals(_mapDebug, log)) return;
+        _mapDebug = null;
+        _mapDebugStatus.Text = log.Problem ?? "已停止，日志已保留。";
+        UpdateMapDebugButton();
     }
 
     private void OpenMapDebugDirectory()
@@ -45,7 +64,7 @@ public sealed partial class MainWindow
     {
         if (_mapDebug == null) return;
         _mapDebug.Record(kind, detail);
-        if (_mapDebug.Problem is { } problem) _mapDebugStatus.Text = problem + " 文件：" + _mapDebug.FilePath;
+        if (_mapDebug.Problem is { } problem) _mapDebugStatus.Text = problem;
     }
 
     private void TraceMapDisplay(string state)

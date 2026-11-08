@@ -54,7 +54,7 @@ internal sealed class MapDebugLog
                     var size = Encoding.UTF8.GetByteCount(line) + Environment.NewLine.Length;
                     if (bytes + size > MaximumBytes)
                     {
-                        _problem = "已达到单次 20 MiB 上限，已停止写入；重新勾选可创建新日志。";
+                        _problem = "已达 20 MiB 上限，记录已停止。可再次开始记录。";
                         _queue.Writer.TryComplete(); return;
                     }
                     await writer.WriteLineAsync(line); bytes += size;

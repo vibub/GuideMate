@@ -179,6 +179,7 @@ public sealed partial class MainWindow : Window
         _subtitleSource.Margin = new(0, 6, 0, 4); follow.Children.Add(_subtitleSource);
         _overlayToggle = Ui.Toggle("字幕与方向浮窗（仅沉浸模式）", _settings.SubtitleOverlay, value => { _settings.SubtitleOverlay = value; UpdateOverlay(); SaveSettings(); });
         follow.Children.Add(_overlayToggle);
+        follow.Children.Add(BuildMapTrackingButton());
         follow.Children.Add(Ui.Heading("窗口"));
         follow.Children.Add(Ui.Text("置顶模式", 11, Ui.Muted));
         _topmostMode.ItemsSource = new[] { "不置顶", "沉浸置顶", "始终置顶" };
