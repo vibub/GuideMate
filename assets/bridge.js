@@ -85,7 +85,7 @@
     if (region) context.drawImage(video, region.X * info.width, region.Y * info.height,
       region.Width * info.width, region.Height * info.height, 0, 0, canvas.width, canvas.height);
     else context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    try { return {...info, method:'canvas', data:canvas.toDataURL('image/png')}; }
+    try { return {...info, method:'canvas', data:mapDetail ? canvas.toDataURL('image/jpeg', .92) : canvas.toDataURL('image/png')}; }
     catch (error) {
       if (error.name !== 'SecurityError') throw error;
       blockedCanvasKey = info.mediaKey;

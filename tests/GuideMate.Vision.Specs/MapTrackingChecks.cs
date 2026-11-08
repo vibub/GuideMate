@@ -43,8 +43,26 @@ internal static class MapTrackingChecks
         using var hud = guide.Clone();
         Cv2.FillPoly(hud, [new Point[] { new(120, 108), new(129, 131), new(120, 125), new(111, 131) }], new Scalar(255, 220, 20));
         Check(locator.Locate(hud, true) != null, "中心玩家箭头存在时可定位小地图");
+        using var tracker = new MinimapTracker();
+        Check(tracker.Locate(hud, locator, false, false, 0) != null, "连续跟踪首次绝对定位");
+        using var moving = new Mat(atlas, new Rect(416, 286, 240, 240));
+        using var movingHud = moving.Clone();
+        Cv2.FillPoly(movingHud, [new Point[] { new(120, 108), new(129, 131), new(120, 125), new(111, 131) }], new Scalar(255, 220, 20));
+        // 超出快速跟踪范围时应由绝对定位恢复，不能复用旧坐标。
+        var relocated = tracker.Locate(movingHud, locator, false, false, 400);
+        Check(relocated != null && Distance(relocated.Location.Position, new(536, 406)) < 3, "大位移重新定位而非冻结旧坐标");
+        using var translated = new Mat(atlas, new Rect(419, 288, 240, 240));
+        using var translatedHud = translated.Clone();
+        Cv2.FillPoly(translatedHud, [new Point[] { new(120, 108), new(129, 131), new(120, 125), new(111, 131) }], new Scalar(255, 220, 20));
+        var fast = tracker.Locate(translatedHud, locator, false, false, 500);
+        Check(fast != null && tracker.UsedTemporalMatch && Distance(fast.Location.Position, new(539, 408)) < 2, "地形平移快速更新玩家世界坐标");
+        var refreshed = tracker.Locate(translatedHud, locator, false, false, 1300);
+        Check(refreshed != null && !tracker.UsedTemporalMatch && Distance(refreshed.Location.Position, new(539, 408)) < 2, "邻域底图重新锚定绝对坐标");
+        tracker.Reset();
+        Check(tracker.Locate(translatedHud, locator, false, false, 1400) != null && !tracker.UsedTemporalMatch, "切换来源重置跟踪及邻域索引");
         using var blank = new Mat(240, 240, MatType.CV_8UC3, Scalar.Black);
         Check(locator.Locate(blank) == null, "黑帧不产生位置");
+        Check(tracker.Locate(blank, locator, false, false, 1500) == null, "地图消失立即结束快速跟踪");
         using var unrelated = new Mat(240, 240, MatType.CV_8UC3, Scalar.Black);
         for (var i = 0; i < 300; i++) Cv2.Line(unrelated, new(random.Next(240), random.Next(240)), new(random.Next(240), random.Next(240)), Scalar.White, 1);
         Check(locator.Locate(unrelated) == null, "无关场景不产生位置");

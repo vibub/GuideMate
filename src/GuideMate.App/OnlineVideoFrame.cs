@@ -51,7 +51,7 @@ public sealed partial class MainWindow
             || after.RootElement.GetProperty("mediaKey").GetString() != key
             || after.RootElement.GetProperty("seeking").GetBoolean()
             || Math.Abs(Finite(after.RootElement, "time", 0) - time) > 0.35) return null;
-        Cv.Cv2.ImEncode(".png", scaled, out var encoded);
+        Cv.Cv2.ImEncode(mapDetail ? ".bmp" : ".png", scaled, out var encoded);
         return new(encoded, width, height, time, key, method, Math.Min(cropWidth, scaled.Width));
     }
 }

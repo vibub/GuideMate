@@ -30,6 +30,11 @@ internal static class MapOverlaySpecs
             var bounds = new System.Drawing.Rectangle(150, 150, 200, 200);
             type.GetMethod("Update")!.Invoke(marker, [bounds, new MapLocation(1, 0, 0, 0, 200, 200, 1), new MapPoint(100, 100)]);
             Pump();
+            var canvas = (System.Windows.Controls.Canvas)marker.Content;
+            Check(canvas.Children.Count == 1 && canvas.Children[0] is System.Windows.Shapes.Ellipse, "只显示一个小圆点，无文字标签");
+            var dot = canvas.Children[0];
+            type.GetMethod("Update")!.Invoke(marker, [bounds, new MapLocation(1, 0, 0, 0, 200, 200, 1), new MapPoint(600, 600)]);
+            Check(canvas.Children.Count == 1 && ReferenceEquals(dot, canvas.Children[0]), "越界仍复用圆点，不重建控件或显示箭头");
             var handle = new WindowInteropHelper(marker).Handle;
             Check(GetForegroundWindow() == foreground, "显示标记不抢走前台窗口");
             var style = GetWindowLongPtr(handle, -20).ToInt64();

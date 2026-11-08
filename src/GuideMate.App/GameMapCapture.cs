@@ -39,7 +39,8 @@ internal static class GameMapCapture
         using (var graphics = Drawing.Graphics.FromImage(bitmap))
             graphics.CopyFromScreen(bounds.Location, Drawing.Point.Empty, bounds.Size, Drawing.CopyPixelOperation.SourceCopy);
         if (ForegroundGame() != handle || bounds != Bounds(handle, region)) return null;
-        using var stream = new MemoryStream(); bitmap.Save(stream, Drawing.Imaging.ImageFormat.Png);
+        // 帧仅在进程内传递，使用无压缩 BMP 避免每轮 PNG 压缩占用识别时间。
+        using var stream = new MemoryStream(); bitmap.Save(stream, Drawing.Imaging.ImageFormat.Bmp);
         return new(stream.ToArray(), bounds, handle);
     }
 

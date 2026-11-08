@@ -59,6 +59,33 @@ public sealed class MapLocator : IDisposable
         catch { Dispose(); throw; }
     }
 
+    /// <summary>已定位后的邻域索引，减少相似地形在全地图中的竞争；坐标仍来自绝对底图。</summary>
+    public MapLocator? CreateLocal(MapLocation location)
+    {
+        var p = location.Position;
+        var radius = Math.Max(300, Math.Sqrt(location.A * location.A + location.B * location.B) * Math.Max(location.Width, location.Height));
+        var indices = Enumerable.Range(0, _points.Length).Where(i => Math.Abs(_points[i].Pt.X - p.X) < radius
+            && Math.Abs(_points[i].Pt.Y - p.Y) < radius).ToArray();
+        return indices.Length < 30 ? null : new MapLocator(this, indices);
+    }
+
+    private MapLocator(MapLocator source, int[] indices)
+    {
+        _size = source._size; _points = indices.Select(i => source._points[i]).ToArray();
+        _features = SIFT.Create(2000); _descriptors = new(indices.Length, 128, MatType.CV_32FC1);
+        try
+        {
+            var sourceRows = source._descriptors.AsRows<float>(); var destinationRows = _descriptors.AsRows<float>();
+            for (var i = 0; i < indices.Length; i++)
+            {
+                sourceRows[indices[i]].CopyTo(destinationRows[i]);
+            }
+            _indexedMatcher = new FlannBasedMatcher(new OpenCvSharp.Flann.KDTreeIndexParams(2), new OpenCvSharp.Flann.SearchParams(96));
+            _indexedMatcher.Add([_descriptors]); _indexedMatcher.Train();
+        }
+        catch { Dispose(); throw; }
+    }
+
     public MapLocation? Locate(Mat minimap, bool requirePlayerArrow = false, MapPoint? playerPixel = null)
     {
         if (minimap.Empty() || minimap.Width < 96 || minimap.Height < 96) return null;
