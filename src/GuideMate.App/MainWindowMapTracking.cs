@@ -12,6 +12,7 @@ public sealed partial class MainWindow
         public readonly MapTrackConfirmation Confirmation = new();
         public readonly MapHeadingConfirmation Heading = new();
         public bool Busy;
+        public bool FixedPlayerCenter;
         public int Revision, WorkerRevision = -1;
         public ArrowRegion? CaptureRegion;
         public MapLocation? Position;
@@ -104,7 +105,7 @@ public sealed partial class MainWindow
     {
         // 该路一次只允许一个后台任务；UI 只修改 Revision，不直接重置正在使用的 Tracker。
         if (lane.WorkerRevision != revision) { lane.Tracker.Reset(); lane.WorkerRevision = revision; }
-        var observation = cropped ? lane.Tracker.LocateCropped(image, locator, timestamp)
+        var observation = cropped ? lane.Tracker.LocateCropped(image, locator, timestamp, lane.FixedPlayerCenter)
             : lane.Tracker.Locate(image, locator, automatic, gameHud, timestamp);
         return new(observation, image.Size(), lane.Tracker.TrackingConfidence, lane.Tracker.NeedsWiderSearch,
             lane.Tracker.UsedTemporalMatch, lane.Tracker.MatchState);
@@ -235,6 +236,7 @@ public sealed partial class MainWindow
     private async Task SampleGameMapAsync()
     {
         var lane = _gameMap;
+        lane.FixedPlayerCenter = true;
         if (lane.Busy || _mapBusy || _mapLocator == null || !MapContextReady()) return;
         lane.Busy = true;
         var locator = _mapLocator; var generation = _mapGeneration; var revision = lane.Revision;

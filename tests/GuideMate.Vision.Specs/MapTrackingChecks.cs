@@ -63,6 +63,18 @@ internal static class MapTrackingChecks
         using var blank = new Mat(240, 240, MatType.CV_8UC3, Scalar.Black);
         Check(locator.Locate(blank) == null, "黑帧不产生位置");
         Check(tracker.Locate(blank, locator, false, false, 2200) == null, "地图消失立即结束快速跟踪");
+        using var hudTracker = new MinimapTracker();
+        Check(hudTracker.Locate(hud, locator, false, false, 0) != null, "固定中心跟踪先确认原始地图");
+        using var hiddenArrow = translated.Clone();
+        Cv2.Circle(hiddenArrow, new(120, 120), 18, Scalar.White, -1);
+        var withoutArrow = hudTracker.LocateCropped(hiddenArrow, locator, 400, fixedPlayerCenter: true);
+        Check(withoutArrow != null && Distance(withoutArrow.Location.Position, new(539, 408)) < 3,
+            "游戏箭头遮挡时仍由当前地形更新位置而非沿用旧坐标");
+        Check(hudTracker.LocateCropped(blank, locator, 500, fixedPlayerCenter: true) == null,
+            "固定中心不能在地图消失后输出旧位置");
+        hudTracker.Reset();
+        Check(hudTracker.LocateCropped(hiddenArrow, locator, 600, fixedPlayerCenter: true) == null,
+            "未锁定地图时不能跳过首次箭头确认");
         using var unrelated = new Mat(240, 240, MatType.CV_8UC3, Scalar.Black);
         for (var i = 0; i < 300; i++) Cv2.Line(unrelated, new(random.Next(240), random.Next(240)), new(random.Next(240), random.Next(240)), Scalar.White, 1);
         Check(locator.Locate(unrelated) == null, "无关场景不产生位置");

@@ -23,7 +23,7 @@ public sealed class MinimapTracker : IDisposable
     public bool NeedsWiderSearch => _weakFrames >= 3;
 
     /// <summary>采集从整帧切换为已锁定选区时，保留绝对参考并换算裁切后的像素尺度。</summary>
-    public MinimapObservation? LocateCropped(Mat frame, MapLocator locator, long timestamp)
+    public MinimapObservation? LocateCropped(Mat frame, MapLocator locator, long timestamp, bool fixedPlayerCenter = false)
     {
         if (_reference is { } previous)
         {
@@ -38,15 +38,15 @@ public sealed class MinimapTracker : IDisposable
             });
             _frameSize = frame.Size();
         }
-        return Locate(frame, locator, false, false, timestamp);
+        return Locate(frame, locator, false, false, timestamp, fixedPlayerCenter);
     }
 
-    public MinimapObservation? Locate(Mat frame, MapLocator locator, bool automatic, bool gameHud, long timestamp)
+    public MinimapObservation? Locate(Mat frame, MapLocator locator, bool automatic, bool gameHud, long timestamp, bool fixedPlayerCenter = false)
     {
         UsedTemporalMatch = false;
         MatchState = "searching";
         _currentArrow = null;
-        var result = LocateCore(frame, locator, automatic, gameHud, timestamp);
+        var result = LocateCore(frame, locator, automatic, gameHud, timestamp, fixedPlayerCenter);
         if (result != null)
         {
             using var crop = new Mat(frame, result.Region);
@@ -63,7 +63,7 @@ public sealed class MinimapTracker : IDisposable
         return result;
     }
 
-    private MinimapObservation? LocateCore(Mat frame, MapLocator locator, bool automatic, bool gameHud, long timestamp)
+    private MinimapObservation? LocateCore(Mat frame, MapLocator locator, bool automatic, bool gameHud, long timestamp, bool fixedPlayerCenter)
     {
         if (frame.Size() != _frameSize) Reset();
         _frameSize = frame.Size();
@@ -74,7 +74,10 @@ public sealed class MinimapTracker : IDisposable
             var anchor = previous.Location.PlayerPixel ?? new MapPoint(crop.Width / 2d, crop.Height / 2d);
             _currentArrow = ArrowDetector.DetectNear(crop, anchor);
             MatchState = _currentArrow == null ? "player_arrow_missing" : "terrain_motion_unconfirmed";
-            if (_currentArrow?.PixelCenter is { } currentAnchor)
+            // 仅游戏已锁定 HUD 可沿用确认过的中心；位置仍须由当前帧地形重新求得。
+            // 攻略可能裁切或切镜头，继续要求玩家箭头。
+            var player = _currentArrow?.PixelCenter ?? (fixedPlayerCenter ? anchor : (MapPoint?)null);
+            if (player is { } currentAnchor)
             {
                 using var gray = TrackingImage(crop);
                 using var icons = TrackingIcons(crop);
@@ -98,7 +101,8 @@ public sealed class MinimapTracker : IDisposable
                     }
                     else if (tracked == null) MatchState = "local_search_throttled";
                     var globalDue = timestamp - _globalTime >= (TrackingConfidence >= .8 ? 8000 : 2500);
-                    if ((globalDue || fix == null && tracked == null) && timestamp - _lastAttempt >= 300)
+                    // 邻域已给出新绝对位置时无需再等待共享全图索引。
+                    if (fix == null && (globalDue || tracked == null) && timestamp - _lastAttempt >= 300)
                     {
                         _lastAttempt = timestamp; _globalTime = timestamp;
                         var globalFix = locator.Locate(crop, playerPixel: currentAnchor);
@@ -161,18 +165,26 @@ public sealed class MinimapTracker : IDisposable
         var matches = new List<(double X, double Y, int Px, int Py, double Score)>();
         var patches = new List<(int X, int Y, double Texture)>();
         // 海面中的有效纹理不一定落在固定八个点上，先在环带挑选最有纹理的地形块。
-        for (var y = 64; y <= 192; y += 32)
-        for (var x = 64; x <= 192; x += 32)
+        for (var y = 48; y <= 208; y += 16)
+        for (var x = 48; x <= 208; x += 16)
         {
             var distance = Math.Sqrt(Math.Pow(x - 128, 2) + Math.Pow(y - 128, 2));
-            if (distance < 48 || distance > 92) continue;
+            if (distance < 48 || distance > 104) continue;
             using var patch = new Mat(reference, new Rect(x - 16, y - 16, 32, 32));
             using var excluded = new Mat(referenceIcons, new Rect(x - 16, y - 16, 32, 32));
             if (Cv2.CountNonZero(excluded) > 32 * 32 * .08) continue;
             Cv2.MeanStdDev(patch, out _, out var deviation);
             if (deviation.Val0 >= 9) patches.Add((x, y, deviation.Val0));
         }
-        foreach (var (px, py, _) in patches.OrderByDescending(p => p.Texture).Take(12))
+        // 细网格寻找标点之间的纹理空隙，避免重叠块重复投票。
+        var selected = new List<(int X, int Y, double Texture)>();
+        foreach (var patch in patches.OrderByDescending(p => p.Texture))
+        {
+            if (selected.Any(p => Math.Abs(p.X - patch.X) < 32 && Math.Abs(p.Y - patch.Y) < 32)) continue;
+            selected.Add(patch);
+            if (selected.Count == 12) break;
+        }
+        foreach (var (px, py, _) in selected)
         {
             using var patch = new Mat(reference, new Rect(px - 16, py - 16, 32, 32));
             using var search = new Mat(current, new Rect(px - 48, py - 48, 96, 96));
