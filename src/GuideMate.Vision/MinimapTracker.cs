@@ -15,6 +15,25 @@ public sealed class MinimapTracker : IDisposable
     private long _referenceTime, _lastAttempt = -1000;
     public bool UsedTemporalMatch { get; private set; }
 
+    /// <summary>采集从整帧切换为已锁定选区时，保留绝对参考并换算裁切后的像素尺度。</summary>
+    public MinimapObservation? LocateCropped(Mat frame, MapLocator locator, long timestamp)
+    {
+        if (_reference is { } previous)
+        {
+            var p = previous.Location;
+            var sx = (double)frame.Width / p.Width; var sy = (double)frame.Height / p.Height;
+            if (Math.Abs(sx / sy - 1) > .02) { Reset(); return null; }
+            var anchor = p.PlayerPixel ?? new MapPoint(p.Width / 2d, p.Height / 2d);
+            _reference = new(new(0, 0, frame.Width, frame.Height), p with
+            {
+                A = p.A / sx, B = p.B / sx, Width = frame.Width, Height = frame.Height,
+                PlayerPixel = new(anchor.X * sx, anchor.Y * sy)
+            });
+            _frameSize = frame.Size();
+        }
+        return Locate(frame, locator, false, false, timestamp);
+    }
+
     public MinimapObservation? Locate(Mat frame, MapLocator locator, bool automatic, bool gameHud, long timestamp)
     {
         UsedTemporalMatch = false;
@@ -48,6 +67,8 @@ public sealed class MinimapTracker : IDisposable
                 }
             }
             if (tracked != null) { UsedTemporalMatch = true; return tracked; }
+            // 短暂遮挡不删除绝对参考；不输出旧位置，下一帧仍可尝试邻域定位和地形恢复。
+            if (timestamp - _referenceTime < 2500) return null;
             _reference = null; _gray?.Dispose(); _gray = null;
         }
         if (timestamp - _lastAttempt < 300) return null;
@@ -104,11 +125,20 @@ public sealed class MinimapTracker : IDisposable
     private static MapPoint? Translation(Mat reference, Mat current)
     {
         var matches = new List<(double X, double Y, int Px, int Py)>();
-        foreach (var (px, py) in new[] { (76, 76), (128, 64), (180, 76), (64, 128), (192, 128), (76, 180), (128, 192), (180, 180) })
+        var patches = new List<(int X, int Y, double Texture)>();
+        // 海面中的有效纹理不一定落在固定八个点上，先在环带挑选最有纹理的地形块。
+        for (var y = 64; y <= 192; y += 32)
+        for (var x = 64; x <= 192; x += 32)
+        {
+            var distance = Math.Sqrt(Math.Pow(x - 128, 2) + Math.Pow(y - 128, 2));
+            if (distance < 48 || distance > 92) continue;
+            using var patch = new Mat(reference, new Rect(x - 16, y - 16, 32, 32));
+            Cv2.MeanStdDev(patch, out _, out var deviation);
+            if (deviation.Val0 >= 9) patches.Add((x, y, deviation.Val0));
+        }
+        foreach (var (px, py, _) in patches.OrderByDescending(p => p.Texture).Take(12))
         {
             using var patch = new Mat(reference, new Rect(px - 16, py - 16, 32, 32));
-            Cv2.MeanStdDev(patch, out _, out var deviation);
-            if (deviation.Val0 < 9) continue;
             using var search = new Mat(current, new Rect(px - 48, py - 48, 96, 96));
             using var scores = new Mat(); Cv2.MatchTemplate(search, patch, scores, TemplateMatchModes.CCoeffNormed);
             Cv2.MinMaxLoc(scores, out _, out var peak, out _, out var point);

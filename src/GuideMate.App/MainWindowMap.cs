@@ -9,16 +9,14 @@ public sealed partial class MainWindow
 {
     private readonly TextBlock _mapStatus = Ui.Text("地图跟随未启动", 12, Ui.Muted);
     private readonly DispatcherTimer _mapTimer = new() { Interval = TimeSpan.FromMilliseconds(80) };
+    private readonly DispatcherTimer _guideMapTimer = new() { Interval = TimeSpan.FromMilliseconds(160) };
     private readonly DispatcherTimer _mapVisibilityTimer = new() { Interval = TimeSpan.FromMilliseconds(100) };
-    private readonly MapTrackConfirmation _guideConfirmation = new(), _gameConfirmation = new();
     private MapLocator? _mapLocator;
-    private readonly MinimapTracker _guideMapTracker = new(), _gameMapTracker = new();
-    private bool _mapResetTracking = true;
+    private readonly MapLane _guideMap = new(), _gameMap = new();
     private MapMarkerWindow? _mapMarker;
     private bool _mapRunning, _mapBusy;
     private int _mapGeneration;
     private int _mapVideoGeneration;
-    private long _mapLastUpdate;
     private nint _mapGameHandle;
     private System.Drawing.Rectangle _mapBounds;
     private string _mapMediaKey = "";
@@ -44,22 +42,16 @@ public sealed partial class MainWindow
         panel.Children.Add(Ui.Command("\uE71A", "停止地图跟随", StopMapTracking));
         panel.Children.Add(_mapStatus);
         panel.Children.Add(Ui.Text("青色圆点为攻略位置，超出范围时停在地图边缘。隐藏随引、切出游戏或跟踪失效时暂停标记。地图配置独立保存，不改变箭头选区。", 12, Ui.Muted));
-        _mapTimer.Tick += async (_, _) => await SampleMapAsync();
-        _mapVisibilityTimer.Tick += (_, _) =>
-        {
-            if (!_mapRunning || !IsVisible || WindowState == WindowState.Minimized || _videoSeeking
-                || _mapMediaKey != _mediaKey || _mapVideoGeneration != _onlineGeneration || GameMapCapture.ForegroundGame() != _mapGameHandle
-                || Environment.TickCount64 - _mapLastUpdate > 1200
-                || GameMapCapture.Bounds(_mapGameHandle, _settings.AutoDetectMinimaps ? null : _settings.MapTracking?.GameRegion) != _mapBounds)
-                _mapMarker?.Hide();
-        };
+        _mapTimer.Tick += async (_, _) => await SampleGameMapAsync();
+        _guideMapTimer.Tick += async (_, _) => await SampleGuideMapAsync();
+        _mapVisibilityTimer.Tick += (_, _) => RenderMapPosition();
         Closed += (_, _) => { StopMapTracking(); _mapMarker?.Close(); _mapMarker = null; };
         return panel;
     }
 
     private bool CanConfigureMap()
     {
-        if (_mapBusy) { _mapStatus.Text = "正在处理地图画面，请稍后重试。"; return false; }
+        if (_mapBusy || _guideMap.Busy || _gameMap.Busy) { _mapStatus.Text = "正在处理地图画面，请稍后重试。"; return false; }
         StopMapTracking(); return true;
     }
 
@@ -154,7 +146,8 @@ public sealed partial class MainWindow
             if (_closing || generation != _mapGeneration) { locator.Dispose(); return; }
             _mapLocator = locator;
             _mapMarker ??= new MapMarkerWindow();
-            _mapRunning = true; _mapTimer.Start(); _mapVisibilityTimer.Start();
+            _mapMediaKey = _mediaKey; _mapVideoGeneration = _onlineGeneration;
+            _mapRunning = true; _mapTimer.Start(); _guideMapTimer.Start(); _mapVisibilityTimer.Start();
             _mapStatus.Text = "已启动。保持攻略小窗可见，并切换到原神开始定位。";
         }
         catch (OperationCanceledException) { _mapStatus.Text = "地图资源加载已取消。"; }
@@ -164,68 +157,10 @@ public sealed partial class MainWindow
 
     private void StopMapTracking()
     {
-        _mapRunning = false; _mapGeneration++; _mapTimer.Stop(); _mapVisibilityTimer.Stop();
+        _mapRunning = false; _mapGeneration++; _mapTimer.Stop(); _guideMapTimer.Stop(); _mapVisibilityTimer.Stop();
         _mapLoadCancellation?.Cancel();
-        _mapMarker?.Hide(); _guideConfirmation.Reset(); _gameConfirmation.Reset();
-        _mapResetTracking = true;
-        if (!_mapBusy) { _mapLocator?.Dispose(); _mapLocator = null; _guideMapTracker.Reset(); _gameMapTracker.Reset(); }
+        ResetMapLane(_guideMap); ResetMapLane(_gameMap); _mapMarker?.Hide();
+        DisposeStoppedMap();
         _mapStatus.Text = "地图跟随已停止。";
-    }
-
-    private void RejectMapSample(string message)
-    {
-        _mapMarker?.Hide(); _guideConfirmation.Reset(); _gameConfirmation.Reset(); _mapResetTracking = true; _mapStatus.Text = message;
-    }
-
-    private async Task SampleMapAsync()
-    {
-        if (_mapBusy || !_mapRunning || _mapLocator == null) return;
-        if (_closing || !IsVisible || WindowState == WindowState.Minimized || _videoSeeking || GameMapCapture.ForegroundGame() == 0)
-        { RejectMapSample("等待前台游戏和可见攻略画面…"); return; }
-        _mapBusy = true; var generation = _mapGeneration; var key = _mediaKey; var videoGeneration = _onlineGeneration;
-        var locator = _mapLocator; var profile = _settings.MapTracking;
-        var automatic = _settings.AutoDetectMinimaps;
-        try
-        {
-            var now = Environment.TickCount64;
-            var gameCapture = Task.Run(() => GameMapCapture.Capture(automatic ? null : profile?.GameRegion));
-            var guideCapture = CaptureOnlineFrameAsync(automatic ? null : profile?.GuideRegion, true);
-            await Task.WhenAll(gameCapture, guideCapture);
-            var guide = await guideCapture;
-            var game = await gameCapture;
-            if (guide == null || game == null) { RejectMapSample("暂无完整地图画面。"); return; }
-            if (_mapMediaKey != key || _mapVideoGeneration != videoGeneration || Math.Abs(guide.Time - _mapVideoTime) > Math.Max(1, (now - _mapSampleTime) / 1000d * _settings.Rate + .5))
-            { _guideConfirmation.Reset(); _gameConfirmation.Reset(); _mapMarker?.Hide(); _mapResetTracking = true; }
-            _mapMediaKey = key; _mapVideoGeneration = videoGeneration; _mapVideoTime = guide.Time; _mapSampleTime = now;
-            var resetTracking = _mapResetTracking; _mapResetTracking = false;
-            var result = await Task.Run(() =>
-            {
-                if (resetTracking) { _guideMapTracker.Reset(); _gameMapTracker.Reset(); }
-                using var guideImage = Cv.Cv2.ImDecode(guide.Image, Cv.ImreadModes.Color);
-                using var gameImage = Cv.Cv2.ImDecode(game.Image, Cv.ImreadModes.Color);
-                return (Guide: _guideMapTracker.Locate(guideImage, locator, automatic, false, now),
-                    Game: _gameMapTracker.Locate(gameImage, locator, automatic, true, now));
-            });
-            if (_closing || !_mapRunning || generation != _mapGeneration) return;
-            if (key != _mediaKey || videoGeneration != _onlineGeneration || _videoSeeking || !IsVisible || WindowState == WindowState.Minimized
-                || GameMapCapture.ForegroundGame() != game.Handle || GameMapCapture.Bounds(game.Handle, automatic ? null : profile?.GameRegion) != game.Bounds
-                || Environment.TickCount64 - now > 1200 || Math.Abs(_position - guide.Time) > Math.Max(1.2, _settings.Rate * 1.2))
-            { RejectMapSample("画面已变化，正在重新定位…"); return; }
-            var guidePosition = _guideConfirmation.Accept(result.Guide?.Location);
-            var gamePosition = _gameConfirmation.Accept(result.Game?.Location);
-            if (guidePosition == null || gamePosition == null)
-            { _mapMarker?.Hide(); _mapStatus.Text = $"定位中 · 攻略{(result.Guide == null ? "未识别" : "待确认")} · 游戏{(result.Game == null ? "未识别" : "待确认")}"; return; }
-            _mapBounds = game.Bounds; _mapGameHandle = game.Handle; _mapLastUpdate = now;
-            var region = result.Game!.Region;
-            var markerBounds = new System.Drawing.Rectangle(game.Bounds.X + region.X, game.Bounds.Y + region.Y, region.Width, region.Height);
-            _mapMarker!.Update(markerBounds, gamePosition, guidePosition.Position);
-            _mapStatus.Text = $"攻略 ({guidePosition.Position.X:0}, {guidePosition.Position.Y:0}) · 玩家 ({gamePosition.Position.X:0}, {gamePosition.Position.Y:0}) · 本轮 {Environment.TickCount64 - now} ms";
-        }
-        catch (Exception ex) { RejectMapSample("地图识别失败：" + ex.Message); }
-        finally
-        {
-            _mapBusy = false;
-            if (!_mapRunning) { _mapLocator?.Dispose(); _mapLocator = null; _guideMapTracker.Reset(); _gameMapTracker.Reset(); }
-        }
     }
 }

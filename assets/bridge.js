@@ -79,8 +79,9 @@
     if (blockedCanvasKey === info.mediaKey) return {...info, method:'preview'};
     const canvas = document.createElement('canvas');
     const scale = Math.min(1, (mapDetail ? 3840 : 1280) / info.width);
-    canvas.width = region ? (mapDetail ? Math.min(1024, Math.round(region.Width * info.width)) : 160) : Math.round(info.width * scale);
-    canvas.height = region ? (mapDetail ? Math.min(1024, Math.round(region.Height * info.height)) : 160) : Math.round(info.height * scale);
+    const regionScale = region ? Math.min(1, 1024 / Math.max(region.Width * info.width, region.Height * info.height)) : 1;
+    canvas.width = region ? (mapDetail ? Math.round(region.Width * info.width * regionScale) : 160) : Math.round(info.width * scale);
+    canvas.height = region ? (mapDetail ? Math.round(region.Height * info.height * regionScale) : 160) : Math.round(info.height * scale);
     const context = canvas.getContext('2d');
     if (region) context.drawImage(video, region.X * info.width, region.Y * info.height,
       region.Width * info.width, region.Height * info.height, 0, 0, canvas.width, canvas.height);

@@ -9,6 +9,10 @@ internal sealed class MapMarkerWindow : Window
     private readonly Canvas _canvas = new();
     private readonly Ellipse _dot = new() { Width = 10, Height = 10, Fill = Brushes.Cyan, Stroke = Brushes.Black, StrokeThickness = 1.5 };
     private nint _handle;
+    private long _lastDraw;
+    private double _drawX, _drawY;
+    private System.Drawing.Rectangle _drawBounds;
+    private bool _wasOutside;
     public MapMarkerWindow()
     {
         if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041))
@@ -36,6 +40,15 @@ internal sealed class MapMarkerWindow : Window
         var length = Math.Sqrt(dx * dx + dy * dy); var radius = Math.Min(Math.Min(cx, w - cx), Math.Min(cy, h - cy)) * .8;
         var outside = length > radius;
         if (outside) { x = cx + dx / length * radius; y = cy + dy / length * radius; }
+        var now = Environment.TickCount64;
+        var delta = now - _lastDraw;
+        if (IsVisible && bounds == _drawBounds && outside == _wasOutside && delta is > 0 and < 200
+            && Math.Sqrt(Math.Pow(x - _drawX, 2) + Math.Pow(y - _drawY, 2)) < 12)
+        {
+            var blend = 1 - Math.Exp(-delta / 35d);
+            x = _drawX + (x - _drawX) * blend; y = _drawY + (y - _drawY) * blend;
+        }
+        _lastDraw = now; _drawBounds = bounds; _drawX = x; _drawY = y; _wasOutside = outside;
         Canvas.SetLeft(_dot, x - 5); Canvas.SetTop(_dot, y - 5);
         Width = w; Height = h;
         if (!IsVisible) Show();

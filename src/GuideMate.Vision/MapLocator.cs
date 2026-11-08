@@ -7,6 +7,7 @@ namespace GuideMate.Vision;
 /// <summary>地表北向地图定位。仅使用图像；不读取游戏内存。</summary>
 public sealed class MapLocator : IDisposable
 {
+    private readonly object _matchGate = new();
     private readonly SIFT _features;
     private readonly Mat _descriptors;
     private readonly KeyPoint[] _points;
@@ -87,6 +88,12 @@ public sealed class MapLocator : IDisposable
     }
 
     public MapLocation? Locate(Mat minimap, bool requirePlayerArrow = false, MapPoint? playerPixel = null)
+    {
+        // 两路共享全图索引；SIFT/FLANN 原生实例不能同时查询。各自的快速跟踪和邻域索引不共用此锁。
+        lock (_matchGate) return LocateCore(minimap, requirePlayerArrow, playerPixel);
+    }
+
+    private MapLocation? LocateCore(Mat minimap, bool requirePlayerArrow, MapPoint? playerPixel)
     {
         if (minimap.Empty() || minimap.Width < 96 || minimap.Height < 96) return null;
         if (requirePlayerArrow)
