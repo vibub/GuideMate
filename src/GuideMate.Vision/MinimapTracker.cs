@@ -17,6 +17,7 @@ public sealed class MinimapTracker : IDisposable
     private long _referenceTime, _lastAttempt = -1000;
     public bool UsedTemporalMatch { get; private set; }
     public double TrackingConfidence { get; private set; }
+    public string MatchState { get; private set; } = "idle";
     private double _motionConfidence;
     private int _weakFrames;
     public bool NeedsWiderSearch => _weakFrames >= 3;
@@ -28,7 +29,7 @@ public sealed class MinimapTracker : IDisposable
         {
             var p = previous.Location;
             var sx = (double)frame.Width / p.Width; var sy = (double)frame.Height / p.Height;
-            if (Math.Abs(sx / sy - 1) > .02) { Reset(); return null; }
+            if (Math.Abs(sx / sy - 1) > .02) { Reset(); MatchState = "crop_aspect_changed"; return null; }
             var anchor = p.PlayerPixel ?? new MapPoint(p.Width / 2d, p.Height / 2d);
             _reference = new(new(0, 0, frame.Width, frame.Height), p with
             {
@@ -43,6 +44,7 @@ public sealed class MinimapTracker : IDisposable
     public MinimapObservation? Locate(Mat frame, MapLocator locator, bool automatic, bool gameHud, long timestamp)
     {
         UsedTemporalMatch = false;
+        MatchState = "searching";
         _currentArrow = null;
         var result = LocateCore(frame, locator, automatic, gameHud, timestamp);
         if (result != null)
@@ -71,6 +73,7 @@ public sealed class MinimapTracker : IDisposable
             using var crop = new Mat(frame, previous.Region);
             var anchor = previous.Location.PlayerPixel ?? new MapPoint(crop.Width / 2d, crop.Height / 2d);
             _currentArrow = ArrowDetector.DetectNear(crop, anchor);
+            MatchState = _currentArrow == null ? "player_arrow_missing" : "terrain_motion_unconfirmed";
             if (_currentArrow?.PixelCenter is { } currentAnchor)
             {
                 using var gray = TrackingImage(crop);
@@ -96,12 +99,12 @@ public sealed class MinimapTracker : IDisposable
                     if (fix != null) return Remember(frame, locator, new(previous.Region, fix), timestamp);
                 }
             }
-            if (tracked != null) { UsedTemporalMatch = true; return tracked; }
+            if (tracked != null) { UsedTemporalMatch = true; MatchState = "terrain_tracked"; return tracked; }
             // 短暂遮挡不删除绝对参考；不输出旧位置，下一帧仍可尝试邻域定位和地形恢复。
             if (timestamp - _referenceTime < 2500) return null;
             _reference = null; _gray?.Dispose(); _gray = null;
         }
-        if (timestamp - _lastAttempt < 300) return null;
+        if (timestamp - _lastAttempt < 300) { MatchState = "search_throttled"; return null; }
         _lastAttempt = timestamp;
         _currentArrow = null;
         MinimapObservation? found;
@@ -111,13 +114,14 @@ public sealed class MinimapTracker : IDisposable
             var fix = locator.Locate(frame, true);
             found = fix == null ? null : new(new(0, 0, frame.Width, frame.Height), fix);
         }
-        if (found == null) return null;
+        if (found == null) { MatchState = "atlas_not_matched"; return null; }
         _globalTime = timestamp;
         return Remember(frame, locator, found, timestamp);
     }
 
     private MinimapObservation Remember(Mat frame, MapLocator locator, MinimapObservation found, long timestamp)
     {
+        MatchState = "atlas_matched";
         _gray?.Dispose(); _icons?.Dispose();
         using var crop = new Mat(frame, found.Region);
         _gray = TrackingImage(crop); _icons = TrackingIcons(crop); _reference = found; _referenceTime = timestamp;

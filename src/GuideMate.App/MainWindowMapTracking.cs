@@ -27,7 +27,8 @@ public sealed partial class MainWindow
         public int GuideInterval = 160;
     }
 
-    private sealed record MapFrameResult(MinimapObservation? Observation, Cv.Size Size, double Confidence, bool WidenSearch);
+    private sealed record MapFrameResult(MinimapObservation? Observation, Cv.Size Size, double Confidence, bool WidenSearch,
+        bool Temporal, string MatchState);
 
     private long _drawnGuideStamp, _drawnGameStamp;
 
@@ -54,17 +55,18 @@ public sealed partial class MainWindow
         if (_closing || !IsVisible || WindowState == WindowState.Minimized || _videoSeeking || handle == 0)
         {
             ResetMapLane(_guideMap); ResetMapLane(_gameMap); _mapSampleTime = 0;
-            _mapMarker?.Hide(); return false;
+            HideMapMarker(_closing ? "closing" : !IsVisible ? "app_hidden" : WindowState == WindowState.Minimized ? "app_minimized"
+                : _videoSeeking ? "video_seeking" : "game_not_foreground"); return false;
         }
         if (_mapMediaKey != _mediaKey || _mapVideoGeneration != _onlineGeneration)
         {
-            ResetMapLane(_guideMap); _mapSampleTime = 0; _mapMarker?.Hide();
+            ResetMapLane(_guideMap); _mapSampleTime = 0; HideMapMarker("media_changed");
             _mapMediaKey = _mediaKey; _mapVideoGeneration = _onlineGeneration;
         }
         var bounds = GameMapCapture.Bounds(handle);
         if (handle != _mapGameHandle || bounds != _mapBounds)
         {
-            ResetMapLane(_gameMap); _mapMarker?.Hide();
+            ResetMapLane(_gameMap); HideMapMarker("game_window_changed");
             _mapGameHandle = handle; _mapBounds = bounds;
         }
         return true;
@@ -77,10 +79,15 @@ public sealed partial class MainWindow
         if (_guideMap.Position is not { } guide || _gameMap.Position is not { } game
             || now - _guideMap.Stamp > 800 || now - _gameMap.Stamp > 350
             || Math.Abs(_position - _guideMap.VideoTime) > Math.Max(1, _settings.Rate * .8))
-        { _mapMarker?.Hide(); return; }
+        {
+            HideMapMarker(_guideMap.Position == null ? "guide_position_unavailable" : _gameMap.Position == null ? "game_position_unavailable"
+                : now - _guideMap.Stamp > 800 ? "guide_expired" : now - _gameMap.Stamp > 350 ? "game_expired" : "video_time_mismatch");
+            return;
+        }
         if (_mapMarker?.IsVisible == true && _drawnGuideStamp == _guideMap.Stamp && _drawnGameStamp == _gameMap.Stamp) return;
         _mapMarker?.SetHeading(guide.PlayerHeading, game);
         _mapMarker?.Update(_gameMap.MarkerBounds, game, guide.Position);
+        TraceMapDisplay(guide.PlayerHeading == null ? "dot" : "arrow");
         _drawnGuideStamp = _guideMap.Stamp; _drawnGameStamp = _gameMap.Stamp;
         _mapStatus.Text = $"攻略 ({guide.Position.X:0}, {guide.Position.Y:0}) · 玩家 ({game.Position.X:0}, {game.Position.Y:0}) · 独立跟随";
     }
@@ -99,16 +106,18 @@ public sealed partial class MainWindow
         if (lane.WorkerRevision != revision) { lane.Tracker.Reset(); lane.WorkerRevision = revision; }
         var observation = cropped ? lane.Tracker.LocateCropped(image, locator, timestamp)
             : lane.Tracker.Locate(image, locator, automatic, gameHud, timestamp);
-        return new(observation, image.Size(), lane.Tracker.TrackingConfidence, lane.Tracker.NeedsWiderSearch);
+        return new(observation, image.Size(), lane.Tracker.TrackingConfidence, lane.Tracker.NeedsWiderSearch,
+            lane.Tracker.UsedTemporalMatch, lane.Tracker.MatchState);
     }
 
-    private static bool ExpandMapSearch(MapLane lane, ArrowRegion? region, bool automatic, bool requested, long timestamp)
+    private bool ExpandMapSearch(MapLane lane, ArrowRegion? region, bool automatic, bool requested, long timestamp)
     {
         if (!automatic || !requested || region == null || lane.SearchingRegion || timestamp - lane.LastExpansion < 2500) return false;
         var x = Math.Max(0, region.X - region.Width * .35); var y = Math.Max(0, region.Y - region.Height * .35);
         var right = Math.Min(1, region.X + region.Width * 1.35); var bottom = Math.Min(1, region.Y + region.Height * 1.35);
         lane.Revision++; lane.CaptureRegion = new(x, y, right - x, bottom - y);
         lane.SearchingRegion = true; lane.LastExpansion = timestamp; lane.FailureSince = timestamp; lane.LastFrameId = null;
+        if (_mapDebug != null) TraceMap("search_expanded", new { lane = ReferenceEquals(lane, _guideMap) ? "guide" : "game", region = lane.CaptureRegion });
         return true;
     }
 
@@ -123,7 +132,7 @@ public sealed partial class MainWindow
             if (ExpandMapSearch(lane, capturedRegion, automatic, widenSearch, timestamp)) return null;
             if (timestamp - lane.FailureSince >= 900)
             {
-                ResetMapLane(lane); _mapMarker?.Hide();
+                ResetMapLane(lane); HideMapMarker(guide ? "guide_full_search" : "game_full_search");
                 _mapStatus.Text = guide ? "攻略地图丢失，重新搜索完整画面…" : "游戏地图丢失，重新搜索完整窗口…";
             }
             return null;
@@ -132,7 +141,10 @@ public sealed partial class MainWindow
         var position = lane.Confirmation.Accept(observation.Location);
         if (position != null) position = position with { PlayerHeading = lane.Heading.Accept(position.PlayerHeading, position.HeadingConfidence, timestamp) };
         lane.Position = position;
-        if (position == null) { _mapMarker?.Hide(); return null; }
+        if (_mapDebug != null) TraceMap("confirmation", new { lane = guide ? "guide" : "game", accepted = position != null,
+            rawHeading = observation.Location.PlayerHeading, headingConfidence = observation.Location.HeadingConfidence,
+            acceptedHeading = position?.PlayerHeading });
+        if (position == null) { HideMapMarker(guide ? "guide_confirmation_pending" : "game_confirmation_pending"); return null; }
         lane.Stamp = timestamp;
         if (automatic && (capturedRegion == null || lane.SearchingRegion))
         {
@@ -141,6 +153,7 @@ public sealed partial class MainWindow
             lane.CaptureRegion = new(basis.X + (double)r.X / size.Width * basis.Width, basis.Y + (double)r.Y / size.Height * basis.Height,
                 (double)r.Width / size.Width * basis.Width, (double)r.Height / size.Height * basis.Height);
             lane.SearchingRegion = false;
+            if (_mapDebug != null) TraceMap("region_locked", new { lane = guide ? "guide" : "game", region = lane.CaptureRegion });
         }
         else ExpandMapSearch(lane, capturedRegion, automatic, widenSearch, timestamp);
         return position;
@@ -175,19 +188,21 @@ public sealed partial class MainWindow
         try
         {
             var frame = await CaptureOnlineFrameAsync(region, true, lane.LastFrameId);
-            if (!_mapRunning || generation != _mapGeneration || revision != lane.Revision) return;
-            if (key != _mediaKey || videoGeneration != _onlineGeneration || _videoSeeking) { ResetMapLane(lane); return; }
-            if (frame == null) { lane.GuideInterval = 160; AcceptMapFrame(lane, null, default, region, automatic, now, true); return; }
+            var captured = Environment.TickCount64;
+            if (!_mapRunning || generation != _mapGeneration || revision != lane.Revision) { TraceMap("guide_capture_discarded"); return; }
+            if (key != _mediaKey || videoGeneration != _onlineGeneration || _videoSeeking) { TraceMap("guide_source_changed"); ResetMapLane(lane); return; }
+            if (frame == null) { TraceMapSample("guide", now, captured, null, "unavailable", cropped, lane.SearchingRegion); lane.GuideInterval = 160; AcceptMapFrame(lane, null, default, region, automatic, now, true); return; }
             var sourceSize = new Cv.Size(frame.Width, frame.Height);
             var jumped = _mapSampleTime != 0 && Math.Abs(frame.Time - _mapVideoTime) > Math.Max(1, (now - _mapSampleTime) / 1000d * _settings.Rate + .5);
             _mapVideoTime = frame.Time; _mapSampleTime = now;
             if (jumped || region != null && lane.SourceSize != default && lane.SourceSize != sourceSize)
             {
-                lane.SourceSize = sourceSize; ResetMapLane(lane); _mapMarker?.Hide(); return;
+                lane.SourceSize = sourceSize; ResetMapLane(lane); HideMapMarker(jumped ? "video_jump" : "video_size_changed"); return;
             }
             lane.SourceSize = sourceSize;
             if (frame.Method == "unchanged")
             {
+                TraceMapSample("guide", now, captured, null, "unchanged", cropped, lane.SearchingRegion);
                 if (!lane.LastFrameLocated) AcceptMapFrame(lane, null, default, region, automatic, now, true);
                 else if (lane.Position != null && Math.Abs(frame.Time - lane.VideoTime) < .15) lane.Stamp = now;
                 else lane.LastFrameId = null;
@@ -195,9 +210,10 @@ public sealed partial class MainWindow
                 RenderMapPosition(); return;
             }
             var result = await Task.Run(() => LocateMapFrame(lane, revision, frame.Image, locator, automatic, cropped, false, now));
-            if (!_mapRunning || generation != _mapGeneration || revision != lane.Revision) return;
+            TraceMapSample("guide", now, captured, result, frame.Method, cropped, lane.SearchingRegion);
+            if (!_mapRunning || generation != _mapGeneration || revision != lane.Revision) { TraceMap("guide_result_discarded"); return; }
             if (key != _mediaKey || videoGeneration != _onlineGeneration || _videoSeeking || Environment.TickCount64 - now > 1200)
-            { ResetMapLane(lane); _mapMarker?.Hide(); return; }
+            { ResetMapLane(lane); HideMapMarker(Environment.TickCount64 - now > 1200 ? "guide_result_too_old" : "guide_source_changed"); return; }
             ScheduleGuide(lane, result.Observation?.Location, result.Confidence, frame.Paused, now);
             if (AcceptMapFrame(lane, result.Observation, result.Size, region, automatic, now, true, result.WidenSearch) != null)
             {
@@ -210,7 +226,8 @@ public sealed partial class MainWindow
         }
         catch (Exception ex)
         {
-            if (generation == _mapGeneration) { ResetMapLane(lane); _mapMarker?.Hide(); _mapStatus.Text = "攻略地图识别失败：" + ex.Message; }
+            if (_mapDebug != null) TraceMap("guide_error", new { type = ex.GetType().Name, code = ex.HResult });
+            if (generation == _mapGeneration) { ResetMapLane(lane); HideMapMarker("guide_error"); _mapStatus.Text = "攻略地图识别失败：" + ex.Message; }
         }
         finally { lane.Busy = false; _guideMapTimer.Interval = TimeSpan.FromMilliseconds(lane.GuideInterval); DisposeStoppedMap(); }
     }
@@ -228,12 +245,14 @@ public sealed partial class MainWindow
         try
         {
             using var frame = await Task.Run(() => GameMapCapture.CapturePixels(region));
-            if (!_mapRunning || generation != _mapGeneration || revision != lane.Revision) return;
-            if (frame == null) { AcceptMapFrame(lane, null, default, region, automatic, now, false); _mapMarker?.Hide(); return; }
+            var captured = Environment.TickCount64;
+            if (!_mapRunning || generation != _mapGeneration || revision != lane.Revision) { TraceMap("game_capture_discarded"); return; }
+            if (frame == null) { TraceMapSample("game", now, captured, null, "unavailable", cropped, lane.SearchingRegion); AcceptMapFrame(lane, null, default, region, automatic, now, false); HideMapMarker("game_capture_unavailable"); return; }
             var result = await Task.Run(() => LocateMapFrame(lane, revision, frame.Image, locator, automatic, cropped, region == null, now));
-            if (!_mapRunning || generation != _mapGeneration || revision != lane.Revision) return;
+            TraceMapSample("game", now, captured, result, "pixels", cropped, lane.SearchingRegion);
+            if (!_mapRunning || generation != _mapGeneration || revision != lane.Revision) { TraceMap("game_result_discarded"); return; }
             if (GameMapCapture.ForegroundGame() != frame.Handle || GameMapCapture.Bounds(frame.Handle) != fullBounds || Environment.TickCount64 - now > 1200)
-            { ResetMapLane(lane); _mapMarker?.Hide(); return; }
+            { ResetMapLane(lane); HideMapMarker(Environment.TickCount64 - now > 1200 ? "game_result_too_old" : "game_capture_context_changed"); return; }
             if (AcceptMapFrame(lane, result.Observation, result.Size, region, automatic, now, false, result.WidenSearch) != null)
             {
                 var r = result.Observation!.Region;
@@ -243,7 +262,8 @@ public sealed partial class MainWindow
         }
         catch (Exception ex)
         {
-            if (generation == _mapGeneration) { ResetMapLane(lane); _mapMarker?.Hide(); _mapStatus.Text = "游戏地图识别失败：" + ex.Message; }
+            if (_mapDebug != null) TraceMap("game_error", new { type = ex.GetType().Name, code = ex.HResult });
+            if (generation == _mapGeneration) { ResetMapLane(lane); HideMapMarker("game_error"); _mapStatus.Text = "游戏地图识别失败：" + ex.Message; }
         }
         finally { lane.Busy = false; DisposeStoppedMap(); }
     }

@@ -40,12 +40,19 @@ public sealed partial class MainWindow
         panel.Children.Add(Ui.Command("\uE714", "手动校准游戏小地图（备用）", CalibrateGameMap));
         panel.Children.Add(Ui.Command("\uE768", "启动地图跟随", StartMapTracking));
         panel.Children.Add(Ui.Command("\uE71A", "停止地图跟随", StopMapTracking));
+        panel.Children.Add(Ui.Toggle("记录地图调试日志（本次运行）", false, SetMapDebug));
+        panel.Children.Add(Ui.Command("\uE8B7", "打开调试日志目录", OpenMapDebugDirectory));
+        panel.Children.Add(_mapDebugStatus);
         panel.Children.Add(_mapStatus);
         panel.Children.Add(Ui.Text("青色小箭头表示攻略位置与角色朝向，方向不确定时显示圆点；超出范围停在地图边缘。隐藏随引、切出游戏或跟踪失效时暂停标记。", 12, Ui.Muted));
         _mapTimer.Tick += async (_, _) => await SampleGameMapAsync();
         _guideMapTimer.Tick += async (_, _) => await SampleGuideMapAsync();
         _mapVisibilityTimer.Tick += (_, _) => RenderMapPosition();
-        Closed += (_, _) => { StopMapTracking(); _mapMarker?.Close(); _mapMarker = null; };
+        Closed += (_, _) =>
+        {
+            StopMapTracking(); _mapMarker?.Close(); _mapMarker = null;
+            _mapDebug?.Complete(); _mapDebug?.Completion.Wait(TimeSpan.FromSeconds(2)); _mapDebug = null;
+        };
         return panel;
     }
 
@@ -149,6 +156,7 @@ public sealed partial class MainWindow
             _mapMediaKey = _mediaKey; _mapVideoGeneration = _onlineGeneration;
             _guideMapTimer.Interval = TimeSpan.FromMilliseconds(160);
             _mapRunning = true; _mapTimer.Start(); _guideMapTimer.Start(); _mapVisibilityTimer.Start();
+            TraceMap("tracking_start", new { automatic = _settings.AutoDetectMinimaps });
             _mapStatus.Text = "已启动。保持攻略小窗可见，并切换到原神开始定位。";
         }
         catch (OperationCanceledException) { _mapStatus.Text = "地图资源加载已取消。"; }
@@ -160,7 +168,8 @@ public sealed partial class MainWindow
     {
         _mapRunning = false; _mapGeneration++; _mapTimer.Stop(); _guideMapTimer.Stop(); _mapVisibilityTimer.Stop();
         _mapLoadCancellation?.Cancel();
-        ResetMapLane(_guideMap); ResetMapLane(_gameMap); _mapMarker?.Hide();
+        ResetMapLane(_guideMap); ResetMapLane(_gameMap); HideMapMarker("tracking_stopped");
+        TraceMap("tracking_stop");
         DisposeStoppedMap();
         _mapStatus.Text = "地图跟随已停止。";
     }
