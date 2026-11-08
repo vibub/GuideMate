@@ -1,12 +1,17 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Drawing = System.Drawing;
+using Cv = OpenCvSharp;
 
 namespace GuideMate.App;
 
 internal static class GameMapCapture
 {
     internal sealed record Frame(byte[] Image, Drawing.Rectangle Bounds, nint Handle);
+    internal sealed record PixelFrame(Cv.Mat Image, Drawing.Rectangle Bounds, nint Handle) : IDisposable
+    {
+        public void Dispose() => Image.Dispose();
+    }
 
     public static nint ForegroundGame()
     {
@@ -31,17 +36,34 @@ internal static class GameMapCapture
 
     public static Frame? Capture(ArrowRegion? region = null)
     {
+        using var frame = CapturePixels(region);
+        if (frame == null) return null;
+        // 仅手动校准窗口需要编码图片；实时识别直接传递独立拥有的像素矩阵。
+        Cv.Cv2.ImEncode(".bmp", frame.Image, out var bytes);
+        return new(bytes, frame.Bounds, frame.Handle);
+    }
+
+    public static PixelFrame? CapturePixels(ArrowRegion? region = null)
+    {
         var handle = ForegroundGame();
         if (handle == 0) return null;
         var bounds = Bounds(handle, region);
         if (bounds.Width < 32 || bounds.Height < 32 || bounds.Width > 7680 || bounds.Height > 4320) return null;
-        using var bitmap = new Drawing.Bitmap(bounds.Width, bounds.Height, Drawing.Imaging.PixelFormat.Format32bppArgb);
+        using var bitmap = new Drawing.Bitmap(bounds.Width, bounds.Height, Drawing.Imaging.PixelFormat.Format24bppRgb);
         using (var graphics = Drawing.Graphics.FromImage(bitmap))
             graphics.CopyFromScreen(bounds.Location, Drawing.Point.Empty, bounds.Size, Drawing.CopyPixelOperation.SourceCopy);
         if (ForegroundGame() != handle || bounds != Bounds(handle, region)) return null;
-        // 帧仅在进程内传递，使用无压缩 BMP 避免每轮 PNG 压缩占用识别时间。
-        using var stream = new MemoryStream(); bitmap.Save(stream, Drawing.Imaging.ImageFormat.Bmp);
-        return new(stream.ToArray(), bounds, handle);
+        var pixels = bitmap.LockBits(new(0, 0, bitmap.Width, bitmap.Height), Drawing.Imaging.ImageLockMode.ReadOnly,
+            Drawing.Imaging.PixelFormat.Format24bppRgb);
+        try
+        {
+            var start = pixels.Stride < 0 ? IntPtr.Add(pixels.Scan0, (bitmap.Height - 1) * pixels.Stride) : pixels.Scan0;
+            using var view = Cv.Mat.FromPixelData(bitmap.Height, bitmap.Width, Cv.MatType.CV_8UC3, start, Math.Abs(pixels.Stride));
+            var owned = view.Clone();
+            if (pixels.Stride < 0) Cv.Cv2.Flip(owned, owned, Cv.FlipMode.X);
+            return new(owned, bounds, handle);
+        }
+        finally { bitmap.UnlockBits(pixels); }
     }
 
     [StructLayout(LayoutKind.Sequential)] private struct NativeRect { public int Left, Top, Right, Bottom; }

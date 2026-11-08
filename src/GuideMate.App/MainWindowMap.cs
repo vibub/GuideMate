@@ -147,6 +147,7 @@ public sealed partial class MainWindow
             _mapLocator = locator;
             _mapMarker ??= new MapMarkerWindow();
             _mapMediaKey = _mediaKey; _mapVideoGeneration = _onlineGeneration;
+            _guideMapTimer.Interval = TimeSpan.FromMilliseconds(160);
             _mapRunning = true; _mapTimer.Start(); _guideMapTimer.Start(); _mapVisibilityTimer.Start();
             _mapStatus.Text = "已启动。保持攻略小窗可见，并切换到原神开始定位。";
         }

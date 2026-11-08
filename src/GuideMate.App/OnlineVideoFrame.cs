@@ -4,14 +4,18 @@ using Cv = OpenCvSharp;
 
 namespace GuideMate.App;
 
-internal sealed record OnlineVideoFrame(byte[] Image, int Width, int Height, double Time, string MediaKey, string Method, int DetailPixels);
+internal sealed record OnlineVideoFrame(byte[] Image, int Width, int Height, double Time, string MediaKey, string Method, int DetailPixels)
+{
+    public string? FrameId { get; init; }
+    public bool Paused { get; init; }
+}
 
 public sealed partial class MainWindow
 {
-    private async Task<OnlineVideoFrame?> CaptureOnlineFrameAsync(ArrowRegion? region = null, bool mapDetail = false)
+    private async Task<OnlineVideoFrame?> CaptureOnlineFrameAsync(ArrowRegion? region = null, bool mapDetail = false, string? previousFrameId = null)
     {
         if (_videoRouter == null || !IsVisible || WindowState == WindowState.Minimized || !_browser.IsVisible) return null;
-        var json = await _videoRouter.ExecuteAsync("window.guideMate?.captureFrame(" + JsonSerializer.Serialize(region) + "," + (mapDetail ? "true" : "false") + ") ?? null");
+        var json = await _videoRouter.ExecuteAsync("window.guideMate?.captureFrame(" + JsonSerializer.Serialize(region) + "," + (mapDetail ? "true" : "false") + "," + JsonSerializer.Serialize(previousFrameId) + ") ?? null");
         using var document = JsonDocument.Parse(json);
         var info = document.RootElement;
         if (info.ValueKind != JsonValueKind.Object) return null;
@@ -19,11 +23,14 @@ public sealed partial class MainWindow
         if (width <= 0 || height <= 0 || info.GetProperty("seeking").GetBoolean()) return null;
         var time = Finite(info, "time", 0); var key = info.GetProperty("mediaKey").GetString()!;
         var method = info.GetProperty("method").GetString()!;
+        var frameId = info.TryGetProperty("frameId", out var identity) && identity.ValueKind == JsonValueKind.String ? identity.GetString() : null;
+        var paused = info.TryGetProperty("paused", out var pause) && pause.ValueKind == JsonValueKind.True;
+        if (method == "unchanged") return new([], width, height, time, key, method, 0) { FrameId = frameId, Paused = paused };
         if (method == "canvas")
         {
             var data = info.GetProperty("data").GetString()!;
             return new(Convert.FromBase64String(data[(data.IndexOf(',') + 1)..]), width, height, time, key, method,
-                region == null ? Math.Min(1280, width) : (int)Math.Round(region.Width * width));
+                region == null ? Math.Min(1280, width) : (int)Math.Round(region.Width * width)) { FrameId = frameId, Paused = paused };
         }
         // Browser-rendered pixels remain available when a cross-origin video taints JavaScript canvas.
         using var stream = new MemoryStream();
@@ -52,6 +59,6 @@ public sealed partial class MainWindow
             || after.RootElement.GetProperty("seeking").GetBoolean()
             || Math.Abs(Finite(after.RootElement, "time", 0) - time) > 0.35) return null;
         Cv.Cv2.ImEncode(mapDetail ? ".bmp" : ".png", scaled, out var encoded);
-        return new(encoded, width, height, time, key, method, Math.Min(cropWidth, scaled.Width));
+        return new(encoded, width, height, time, key, method, Math.Min(cropWidth, scaled.Width)) { FrameId = frameId, Paused = paused };
     }
 }

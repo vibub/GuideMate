@@ -56,13 +56,13 @@ internal static class MapTrackingChecks
         Cv2.FillPoly(translatedHud, [new Point[] { new(120, 108), new(129, 131), new(120, 125), new(111, 131) }], new Scalar(255, 220, 20));
         var fast = tracker.Locate(translatedHud, locator, false, false, 500);
         Check(fast != null && tracker.UsedTemporalMatch && Distance(fast.Location.Position, new(539, 408)) < 2, "地形平移快速更新玩家世界坐标");
-        var refreshed = tracker.Locate(translatedHud, locator, false, false, 1300);
+        var refreshed = tracker.Locate(translatedHud, locator, false, false, 2000);
         Check(refreshed != null && !tracker.UsedTemporalMatch && Distance(refreshed.Location.Position, new(539, 408)) < 2, "邻域底图重新锚定绝对坐标");
         tracker.Reset();
-        Check(tracker.Locate(translatedHud, locator, false, false, 1400) != null && !tracker.UsedTemporalMatch, "切换来源重置跟踪及邻域索引");
+        Check(tracker.Locate(translatedHud, locator, false, false, 2100) != null && !tracker.UsedTemporalMatch, "切换来源重置跟踪及邻域索引");
         using var blank = new Mat(240, 240, MatType.CV_8UC3, Scalar.Black);
         Check(locator.Locate(blank) == null, "黑帧不产生位置");
-        Check(tracker.Locate(blank, locator, false, false, 1500) == null, "地图消失立即结束快速跟踪");
+        Check(tracker.Locate(blank, locator, false, false, 2200) == null, "地图消失立即结束快速跟踪");
         using var unrelated = new Mat(240, 240, MatType.CV_8UC3, Scalar.Black);
         for (var i = 0; i < 300; i++) Cv2.Line(unrelated, new(random.Next(240), random.Next(240)), new(random.Next(240), random.Next(240)), Scalar.White, 1);
         Check(locator.Locate(unrelated) == null, "无关场景不产生位置");

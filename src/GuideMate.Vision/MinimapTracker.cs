@@ -14,6 +14,10 @@ public sealed class MinimapTracker : IDisposable
     private long _globalTime;
     private long _referenceTime, _lastAttempt = -1000;
     public bool UsedTemporalMatch { get; private set; }
+    public double TrackingConfidence { get; private set; }
+    private double _motionConfidence;
+    private int _weakFrames;
+    public bool NeedsWiderSearch => _weakFrames >= 3;
 
     /// <summary>采集从整帧切换为已锁定选区时，保留绝对参考并换算裁切后的像素尺度。</summary>
     public MinimapObservation? LocateCropped(Mat frame, MapLocator locator, long timestamp)
@@ -37,6 +41,14 @@ public sealed class MinimapTracker : IDisposable
     public MinimapObservation? Locate(Mat frame, MapLocator locator, bool automatic, bool gameHud, long timestamp)
     {
         UsedTemporalMatch = false;
+        var result = LocateCore(frame, locator, automatic, gameHud, timestamp);
+        TrackingConfidence = result == null ? 0 : UsedTemporalMatch ? _motionConfidence : result.Location.Confidence;
+        _weakFrames = TrackingConfidence < .7 ? _weakFrames + 1 : 0;
+        return result;
+    }
+
+    private MinimapObservation? LocateCore(Mat frame, MapLocator locator, bool automatic, bool gameHud, long timestamp)
+    {
         if (frame.Size() != _frameSize) Reset();
         _frameSize = frame.Size();
         MinimapObservation? tracked = null;
@@ -47,17 +59,19 @@ public sealed class MinimapTracker : IDisposable
             if (FindPlayer(crop, anchor) is { } currentAnchor)
             {
                 using var gray = TrackingImage(crop);
-                if (timestamp - _referenceTime <= 2500 && Translation(_gray!, gray) is { } delta)
+                if (timestamp - _referenceTime <= 2500 && Translation(_gray!, gray) is { } motion)
                 {
+                    var delta = motion.Shift; _motionConfidence = motion.Confidence;
                     var dx = delta.X * crop.Width / gray.Width; var dy = delta.Y * crop.Height / gray.Height;
                     var p = previous.Location;
                     tracked = previous with { Location = p with { Tx = p.Tx - p.A * dx + p.B * dy, Ty = p.Ty - p.B * dx - p.A * dy, PlayerPixel = currentAnchor } };
                 }
-                if ((tracked == null || timestamp - _referenceTime >= 750) && timestamp - _lastAttempt >= 300)
+                var verifyInterval = TrackingConfidence >= .8 ? 1500 : 500;
+                if ((tracked == null || timestamp - _referenceTime >= verifyInterval) && timestamp - _lastAttempt >= 300)
                 {
                     _lastAttempt = timestamp;
                     MapLocation? fix = null;
-                    if (timestamp - _globalTime >= 5000)
+                    if (timestamp - _globalTime >= (TrackingConfidence >= .8 ? 8000 : 2500))
                     {
                         fix = locator.Locate(crop, playerPixel: currentAnchor); _globalTime = timestamp;
                     }
@@ -122,9 +136,9 @@ public sealed class MinimapTracker : IDisposable
     }
 
     // 多块地形必须一致平移；中心箭头、圆周边框以及少数固定图标不参与投票。
-    private static MapPoint? Translation(Mat reference, Mat current)
+    private static (MapPoint Shift, double Confidence)? Translation(Mat reference, Mat current)
     {
-        var matches = new List<(double X, double Y, int Px, int Py)>();
+        var matches = new List<(double X, double Y, int Px, int Py, double Score)>();
         var patches = new List<(int X, int Y, double Texture)>();
         // 海面中的有效纹理不一定落在固定八个点上，先在环带挑选最有纹理的地形块。
         for (var y = 64; y <= 192; y += 32)
@@ -150,18 +164,19 @@ public sealed class MinimapTracker : IDisposable
             }
             var dx = point.X - 32 + Refine(scores.At<float>(point.Y, point.X - 1), scores.At<float>(point.Y, point.X), scores.At<float>(point.Y, point.X + 1));
             var dy = point.Y - 32 + Refine(scores.At<float>(point.Y - 1, point.X), scores.At<float>(point.Y, point.X), scores.At<float>(point.Y + 1, point.X));
-            matches.Add((dx, dy, px, py));
+            matches.Add((dx, dy, px, py, peak));
         }
         var best = matches.Select(m => matches.Where(n => Math.Abs(m.X - n.X) < 1.5 && Math.Abs(m.Y - n.Y) < 1.5).ToArray())
             .OrderByDescending(group => group.Length).FirstOrDefault();
         if (best == null || best.Length < 4 || best.Max(m => m.Px) - best.Min(m => m.Px) < 80 || best.Max(m => m.Py) - best.Min(m => m.Py) < 80) return null;
-        return new(best.Average(m => m.X), best.Average(m => m.Y));
+        return (new(best.Average(m => m.X), best.Average(m => m.Y)), Math.Min(1, best.Length / 6d) * best.Average(m => m.Score));
     }
 
     public void Reset()
     {
         _reference = null; _gray?.Dispose(); _gray = null; _lastAttempt = -1000;
         _local?.Dispose(); _local = null; _localOrigin = null;
+        _weakFrames = 0; TrackingConfidence = 0;
     }
     public void Dispose() => Reset();
 }

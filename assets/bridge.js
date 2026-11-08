@@ -45,9 +45,33 @@
     for (const event of rateEvents) target?.addEventListener(event, rateLoading);
   };
   const finite = value => Number.isFinite(value) ? value : 0;
+  const videoFrameStates = new WeakMap();
+  const videoFrameIdentity = video => {
+    let state = videoFrameStates.get(video);
+    if (!state) {
+      state = {id:crypto.randomUUID(), epoch:0, presented:null, callback:null, touched:0};
+      videoFrameStates.set(video, state);
+      for (const event of ['seeking', 'loadedmetadata', 'emptied'])
+        video.addEventListener?.(event, () => { state.epoch++; state.presented = null; });
+    }
+    state.touched = Date.now();
+    if (video.requestVideoFrameCallback && state.callback === null) {
+      const observe = (_, metadata) => {
+        state.presented = metadata.presentedFrames;
+        state.callback = null;
+        // 地图采集停止后不永久监听；暂停等待下一帧时不轮询像素。
+        if (video.isConnected && Date.now() - state.touched < 1500)
+          state.callback = video.requestVideoFrameCallback(observe);
+      };
+      state.callback = video.requestVideoFrameCallback(observe);
+    }
+    const decoded = video.getVideoPlaybackQuality?.().totalVideoFrames;
+    return JSON.stringify([frameToken, state.id, state.epoch, video.currentSrc, video.videoWidth, video.videoHeight,
+      Boolean(video.paused), state.presented, decoded > 0 ? decoded : state.presented !== null ? null : finite(video.currentTime)]);
+  };
   const viewport = () => window === window.top
     ? {x:0, y:0, sx:1, sy:1, width:innerWidth, height:innerHeight} : frameViewport;
-  const frameInfo = () => {
+  const frameInfo = (trackFrames = false) => {
     const video = visibleVideo(), view = viewport();
     if (!video || !view || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return null;
     const r = video.getBoundingClientRect(), style = getComputedStyle(video);
@@ -69,13 +93,15 @@
     const x = r.left + video.clientLeft * bx + offset(position[0], boxWidth - width);
     const y = r.top + video.clientTop * by + offset(position[1], boxHeight - height);
     return {mediaKey:location.href + '|' + video.currentSrc, time:finite(video.currentTime),
+      paused:Boolean(video.paused), frameId:trackFrames ? videoFrameIdentity(video) : null,
       width:video.videoWidth, height:video.videoHeight, seeking:video.seeking,
       x:view.x + x * view.sx, y:view.y + y * view.sy, displayWidth:width * view.sx, displayHeight:height * view.sy,
       viewportWidth:view.width, viewportHeight:view.height};
   };
-  const captureFrame = (region, mapDetail = false) => {
-    const info = frameInfo(), video = visibleVideo();
+  const captureFrame = (region, mapDetail = false, previousFrameId = null) => {
+    const info = frameInfo(mapDetail), video = visibleVideo();
     if (!info || info.seeking) return null;
+    if (previousFrameId && previousFrameId === info.frameId) return {...info, method:'unchanged'};
     if (blockedCanvasKey === info.mediaKey) return {...info, method:'preview'};
     const canvas = document.createElement('canvas');
     const scale = Math.min(1, (mapDetail ? 3840 : 1280) / info.width);

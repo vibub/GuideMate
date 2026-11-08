@@ -18,7 +18,15 @@ public sealed partial class MainWindow
         public double VideoTime;
         public Drawing.Rectangle MarkerBounds;
         public Cv.Size SourceSize;
+        public string? LastFrameId;
+        public bool LastFrameLocated;
+        public bool SearchingRegion;
+        public long LastExpansion;
+        public double MotionSpeed;
+        public int GuideInterval = 160;
     }
+
+    private sealed record MapFrameResult(MinimapObservation? Observation, Cv.Size Size, double Confidence, bool WidenSearch);
 
     private long _drawnGuideStamp, _drawnGameStamp;
 
@@ -26,6 +34,7 @@ public sealed partial class MainWindow
     {
         lane.Revision++; lane.CaptureRegion = null; lane.Position = null;
         lane.Stamp = 0; lane.FailureSince = 0; lane.Confirmation.Reset();
+        lane.LastFrameId = null; lane.LastFrameLocated = false; lane.SearchingRegion = false; lane.MotionSpeed = 0; lane.GuideInterval = 160;
     }
 
     private void DisposeStoppedMap()
@@ -73,25 +82,42 @@ public sealed partial class MainWindow
         _mapStatus.Text = $"攻略 ({guide.Position.X:0}, {guide.Position.Y:0}) · 玩家 ({game.Position.X:0}, {game.Position.Y:0}) · 独立跟随";
     }
 
-    private static (MinimapObservation? Observation, Cv.Size Size) LocateMapFrame(MapLane lane, int revision,
+    private static MapFrameResult LocateMapFrame(MapLane lane, int revision,
         byte[] bytes, MapLocator locator, bool automatic, bool cropped, bool gameHud, long timestamp)
+    {
+        using var image = Cv.Cv2.ImDecode(bytes, Cv.ImreadModes.Color);
+        return LocateMapFrame(lane, revision, image, locator, automatic, cropped, gameHud, timestamp);
+    }
+
+    private static MapFrameResult LocateMapFrame(MapLane lane, int revision,
+        Cv.Mat image, MapLocator locator, bool automatic, bool cropped, bool gameHud, long timestamp)
     {
         // 该路一次只允许一个后台任务；UI 只修改 Revision，不直接重置正在使用的 Tracker。
         if (lane.WorkerRevision != revision) { lane.Tracker.Reset(); lane.WorkerRevision = revision; }
-        using var image = Cv.Cv2.ImDecode(bytes, Cv.ImreadModes.Color);
         var observation = cropped ? lane.Tracker.LocateCropped(image, locator, timestamp)
             : lane.Tracker.Locate(image, locator, automatic, gameHud, timestamp);
-        return (observation, image.Size());
+        return new(observation, image.Size(), lane.Tracker.TrackingConfidence, lane.Tracker.NeedsWiderSearch);
+    }
+
+    private static bool ExpandMapSearch(MapLane lane, ArrowRegion? region, bool automatic, bool requested, long timestamp)
+    {
+        if (!automatic || !requested || region == null || lane.SearchingRegion || timestamp - lane.LastExpansion < 2500) return false;
+        var x = Math.Max(0, region.X - region.Width * .35); var y = Math.Max(0, region.Y - region.Height * .35);
+        var right = Math.Min(1, region.X + region.Width * 1.35); var bottom = Math.Min(1, region.Y + region.Height * 1.35);
+        lane.Revision++; lane.CaptureRegion = new(x, y, right - x, bottom - y);
+        lane.SearchingRegion = true; lane.LastExpansion = timestamp; lane.FailureSince = timestamp; lane.LastFrameId = null;
+        return true;
     }
 
     private MapLocation? AcceptMapFrame(MapLane lane, MinimapObservation? observation, Cv.Size size,
-        ArrowRegion? capturedRegion, bool automatic, long timestamp, bool guide)
+        ArrowRegion? capturedRegion, bool automatic, long timestamp, bool guide, bool widenSearch = false)
     {
         if (observation == null)
         {
             if (lane.FailureSince == 0) lane.FailureSince = timestamp;
             // 游戏无新位置时不冻结屏幕圆点；攻略短暂丢帧允许游戏继续投影最近的世界坐标。
             if (!guide || timestamp - lane.Stamp > 400) lane.Position = null;
+            if (ExpandMapSearch(lane, capturedRegion, automatic, widenSearch, timestamp)) return null;
             if (timestamp - lane.FailureSince >= 900)
             {
                 ResetMapLane(lane); _mapMarker?.Hide();
@@ -104,13 +130,30 @@ public sealed partial class MainWindow
         lane.Position = position;
         if (position == null) { _mapMarker?.Hide(); return null; }
         lane.Stamp = timestamp;
-        if (automatic && capturedRegion == null)
+        if (automatic && (capturedRegion == null || lane.SearchingRegion))
         {
             var r = observation.Region;
-            lane.CaptureRegion = new((double)r.X / size.Width, (double)r.Y / size.Height,
-                (double)r.Width / size.Width, (double)r.Height / size.Height);
+            var basis = capturedRegion ?? new ArrowRegion(0, 0, 1, 1);
+            lane.CaptureRegion = new(basis.X + (double)r.X / size.Width * basis.Width, basis.Y + (double)r.Y / size.Height * basis.Height,
+                (double)r.Width / size.Width * basis.Width, (double)r.Height / size.Height * basis.Height);
+            lane.SearchingRegion = false;
         }
+        else ExpandMapSearch(lane, capturedRegion, automatic, widenSearch, timestamp);
         return position;
+    }
+
+    private static void ScheduleGuide(MapLane lane, MapLocation? next, double confidence, bool paused, long timestamp)
+    {
+        if (next != null && lane.Position is { } previous && lane.Stamp > 0)
+        {
+            var p = next.ToMinimap(previous.Position);
+            var anchor = next.PlayerPixel ?? new MapPoint(next.Width / 2d, next.Height / 2d);
+            var speed = Math.Sqrt(Math.Pow(p.X - anchor.X, 2) + Math.Pow(p.Y - anchor.Y, 2))
+                * 240 / next.Width / Math.Max(.08, (timestamp - lane.Stamp) / 1000d);
+            lane.MotionSpeed = .5 * lane.MotionSpeed + .5 * speed;
+        }
+        lane.GuideInterval = next == null || confidence < .7 ? 80 : paused ? 400
+            : lane.MotionSpeed > 12 ? 80 : lane.MotionSpeed > 2 ? 160 : 300;
     }
 
     private async Task SampleGuideMapAsync()
@@ -122,12 +165,13 @@ public sealed partial class MainWindow
         var key = _mediaKey; var videoGeneration = _onlineGeneration; var now = Environment.TickCount64;
         var automatic = _settings.AutoDetectMinimaps;
         var region = automatic ? lane.CaptureRegion : _settings.MapTracking?.GuideRegion;
+        var cropped = automatic && region != null && !lane.SearchingRegion;
         try
         {
-            var frame = await CaptureOnlineFrameAsync(region, true);
+            var frame = await CaptureOnlineFrameAsync(region, true, lane.LastFrameId);
             if (!_mapRunning || generation != _mapGeneration || revision != lane.Revision) return;
             if (key != _mediaKey || videoGeneration != _onlineGeneration || _videoSeeking) { ResetMapLane(lane); return; }
-            if (frame == null) { AcceptMapFrame(lane, null, default, region, automatic, now, true); return; }
+            if (frame == null) { lane.GuideInterval = 160; AcceptMapFrame(lane, null, default, region, automatic, now, true); return; }
             var sourceSize = new Cv.Size(frame.Width, frame.Height);
             var jumped = _mapSampleTime != 0 && Math.Abs(frame.Time - _mapVideoTime) > Math.Max(1, (now - _mapSampleTime) / 1000d * _settings.Rate + .5);
             _mapVideoTime = frame.Time; _mapSampleTime = now;
@@ -136,18 +180,33 @@ public sealed partial class MainWindow
                 lane.SourceSize = sourceSize; ResetMapLane(lane); _mapMarker?.Hide(); return;
             }
             lane.SourceSize = sourceSize;
-            var result = await Task.Run(() => LocateMapFrame(lane, revision, frame.Image, locator, automatic, automatic && region != null, false, now));
+            if (frame.Method == "unchanged")
+            {
+                if (!lane.LastFrameLocated) AcceptMapFrame(lane, null, default, region, automatic, now, true);
+                else if (lane.Position != null && Math.Abs(frame.Time - lane.VideoTime) < .15) lane.Stamp = now;
+                else lane.LastFrameId = null;
+                lane.GuideInterval = frame.Paused ? 400 : Math.Min(160, lane.GuideInterval);
+                RenderMapPosition(); return;
+            }
+            var result = await Task.Run(() => LocateMapFrame(lane, revision, frame.Image, locator, automatic, cropped, false, now));
             if (!_mapRunning || generation != _mapGeneration || revision != lane.Revision) return;
             if (key != _mediaKey || videoGeneration != _onlineGeneration || _videoSeeking || Environment.TickCount64 - now > 1200)
             { ResetMapLane(lane); _mapMarker?.Hide(); return; }
-            if (AcceptMapFrame(lane, result.Observation, result.Size, region, automatic, now, true) != null) lane.VideoTime = frame.Time;
+            ScheduleGuide(lane, result.Observation?.Location, result.Confidence, frame.Paused, now);
+            if (AcceptMapFrame(lane, result.Observation, result.Size, region, automatic, now, true, result.WidenSearch) != null)
+            {
+                lane.VideoTime = frame.Time;
+                if (revision == lane.Revision) { lane.LastFrameId = frame.FrameId; lane.LastFrameLocated = true; }
+            }
+            else if (result.Observation == null && revision == lane.Revision)
+            { lane.LastFrameId = frame.FrameId; lane.LastFrameLocated = false; }
             RenderMapPosition();
         }
         catch (Exception ex)
         {
             if (generation == _mapGeneration) { ResetMapLane(lane); _mapMarker?.Hide(); _mapStatus.Text = "攻略地图识别失败：" + ex.Message; }
         }
-        finally { lane.Busy = false; DisposeStoppedMap(); }
+        finally { lane.Busy = false; _guideMapTimer.Interval = TimeSpan.FromMilliseconds(lane.GuideInterval); DisposeStoppedMap(); }
     }
 
     private async Task SampleGameMapAsync()
@@ -158,17 +217,18 @@ public sealed partial class MainWindow
         var locator = _mapLocator; var generation = _mapGeneration; var revision = lane.Revision;
         var now = Environment.TickCount64; var automatic = _settings.AutoDetectMinimaps;
         var region = automatic ? lane.CaptureRegion : _settings.MapTracking?.GameRegion;
+        var cropped = automatic && region != null && !lane.SearchingRegion;
         var fullBounds = _mapBounds;
         try
         {
-            var frame = await Task.Run(() => GameMapCapture.Capture(region));
+            using var frame = await Task.Run(() => GameMapCapture.CapturePixels(region));
             if (!_mapRunning || generation != _mapGeneration || revision != lane.Revision) return;
             if (frame == null) { AcceptMapFrame(lane, null, default, region, automatic, now, false); _mapMarker?.Hide(); return; }
-            var result = await Task.Run(() => LocateMapFrame(lane, revision, frame.Image, locator, automatic, automatic && region != null, true, now));
+            var result = await Task.Run(() => LocateMapFrame(lane, revision, frame.Image, locator, automatic, cropped, region == null, now));
             if (!_mapRunning || generation != _mapGeneration || revision != lane.Revision) return;
             if (GameMapCapture.ForegroundGame() != frame.Handle || GameMapCapture.Bounds(frame.Handle) != fullBounds || Environment.TickCount64 - now > 1200)
             { ResetMapLane(lane); _mapMarker?.Hide(); return; }
-            if (AcceptMapFrame(lane, result.Observation, result.Size, region, automatic, now, false) != null)
+            if (AcceptMapFrame(lane, result.Observation, result.Size, region, automatic, now, false, result.WidenSearch) != null)
             {
                 var r = result.Observation!.Region;
                 lane.MarkerBounds = new(frame.Bounds.X + r.X, frame.Bounds.Y + r.Y, r.Width, r.Height);
