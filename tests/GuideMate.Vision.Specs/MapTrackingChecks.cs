@@ -58,6 +58,25 @@ internal static class MapTrackingChecks
         old.MapTracking = new("map.png", new(.1, .1, .2, .2), new(.05, .05, .1, .1));
         var roundtrip = JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(old))!;
         Check(roundtrip.MapTracking == old.MapTracking && roundtrip.Hotkeys["PlayPause"] == "Mouse4", "地图配置保存且保留原热键");
+        var temporary = Path.Combine(Path.GetTempPath(), "GuideMate-map-invalid-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(temporary);
+        var archive = Path.Combine(temporary, "invalid.nupkg");
+        var destination = Path.Combine(temporary, "resources");
+        try
+        {
+            File.WriteAllText(archive, "invalid package");
+            var rejected = false;
+            try { BuiltInMapAssets.InstallArchiveAsync(archive, destination).GetAwaiter().GetResult(); }
+            catch (InvalidDataException) { rejected = true; }
+            Check(rejected && !Directory.Exists(destination), "资源摘要错误时不安装、不覆盖缓存");
+            using var cancellation = new CancellationTokenSource(); cancellation.Cancel();
+            var cancelled = false;
+            try { BuiltInMapAssets.InstallArchiveAsync(archive, destination, cancellation.Token).GetAwaiter().GetResult(); }
+            catch (OperationCanceledException) { cancelled = true; }
+            Check(cancelled && !Directory.Exists(destination), "取消安装时不产生资源文件");
+            Check(!BuiltInMapAssets.IsReadyAsync(destination).GetAwaiter().GetResult(), "不存在的资源不被当作离线缓存");
+        }
+        finally { File.Delete(archive); Directory.Delete(temporary); }
         Console.WriteLine($"Map synthetic checks: {checks}; elapsed {watch.ElapsedMilliseconds} ms (not a game benchmark)");
         return checks;
     }

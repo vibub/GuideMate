@@ -5,6 +5,11 @@ using GuideMate.Vision;
 using OpenCvSharp;
 
 var checks = 0;
+if (args.Length == 3 && args[0] == "--built-in-map")
+{
+    await BuiltInMapChecks.RunAsync(args[1], args[2]);
+    return;
+}
 checks += MapTrackingChecks.Run();
 if (args.Contains("--map-only")) return;
 void Check(bool condition, string name)

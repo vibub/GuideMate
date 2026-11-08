@@ -1,6 +1,7 @@
 using GuideMate.Vision;
 using System.Windows.Threading;
 using Cv = OpenCvSharp;
+using System.Threading;
 
 namespace GuideMate.App;
 
@@ -21,15 +22,17 @@ public sealed partial class MainWindow
     private string _mapMediaKey = "";
     private double _mapVideoTime;
     private long _mapSampleTime;
+    private CancellationTokenSource? _mapLoadCancellation;
 
     private FrameworkElement BuildMapPanel()
     {
         var panel = new StackPanel { Margin = new(0, 18, 0, 0) };
         panel.Children.Add(Ui.Heading("原神地图跟随 · 实验功能"));
-        panel.Children.Add(Ui.Text("单个地表区域、北向固定、窗口化或无边框。需导入同区域无标注底图，地图不可被其他窗口遮挡。", 12, Ui.Muted));
-        panel.Children.Add(Ui.Command("\uE8B7", "1. 导入地表底图", ImportMapAtlas));
-        panel.Children.Add(Ui.Command("\uE714", "2. 框选攻略完整小地图", CalibrateGuideMap));
-        panel.Children.Add(Ui.Command("\uE714", "3. 框选游戏完整小地图", CalibrateGameMap));
+        panel.Children.Add(Ui.Text("默认使用提瓦特地表地图，首次启动自动下载约 206 MiB，后续离线使用。北向固定，游戏地图需无遮挡。", 12, Ui.Muted));
+        panel.Children.Add(Ui.Command("\uE707", "使用内置提瓦特地表地图", UseBuiltInMap));
+        panel.Children.Add(Ui.Command("\uE8B7", "导入自定义底图（可选）", ImportMapAtlas));
+        panel.Children.Add(Ui.Command("\uE714", "1. 框选攻略完整小地图", CalibrateGuideMap));
+        panel.Children.Add(Ui.Command("\uE714", "2. 框选游戏完整小地图", CalibrateGameMap));
         panel.Children.Add(Ui.Command("\uE768", "启动地图跟随", StartMapTracking));
         panel.Children.Add(Ui.Command("\uE71A", "停止地图跟随", StopMapTracking));
         panel.Children.Add(_mapStatus);
@@ -61,6 +64,14 @@ public sealed partial class MainWindow
         var previous = _settings.MapTracking;
         _settings.MapTracking = new(picker.FileName, previous?.GuideRegion, previous?.GameRegion);
         SaveSettings(); _mapStatus.Text = "底图：" + Path.GetFileName(picker.FileName) + "；启动时检查纹理。";
+    }
+
+    private void UseBuiltInMap()
+    {
+        if (!CanConfigureMap()) return;
+        var previous = _settings.MapTracking;
+        _settings.MapTracking = new("", previous?.GuideRegion, previous?.GameRegion);
+        SaveSettings(); _mapStatus.Text = "已选择内置提瓦特地表地图。首次启动时自动下载资源；地下和特殊地图暂不支持。";
     }
 
     private async void CalibrateGuideMap()
@@ -113,14 +124,23 @@ public sealed partial class MainWindow
     {
         if (!CanConfigureMap()) return;
         var profile = _settings.MapTracking;
-        if (profile?.GuideRegion is not { IsValid: true } || profile.GameRegion is not { IsValid: true } || !File.Exists(profile.AtlasPath))
-        { _mapStatus.Text = "请先导入底图，并分别保存攻略和游戏的小地图选区。"; return; }
+        if (profile?.GuideRegion is not { IsValid: true } || profile.GameRegion is not { IsValid: true })
+        { _mapStatus.Text = "请先分别保存攻略和游戏的小地图选区。"; return; }
+        if (!string.IsNullOrEmpty(profile.AtlasPath) && !File.Exists(profile.AtlasPath))
+        { _mapStatus.Text = "自定义底图不存在，请重新导入或选择内置提瓦特地图。"; return; }
         _mapBusy = true; var generation = _mapGeneration;
+        _mapLoadCancellation = new(); var token = _mapLoadCancellation.Token;
         try
         {
+            string? featureDirectory = null;
+            if (string.IsNullOrEmpty(profile.AtlasPath))
+                featureDirectory = await BuiltInMapAssets.EnsureAsync(_dataPath, new Progress<string>(message =>
+                { if (!_closing && generation == _mapGeneration) _mapStatus.Text = message; }), token);
+            token.ThrowIfCancellationRequested();
             _mapStatus.Text = "正在建立底图特征…";
             var locator = await Task.Run(() =>
             {
+                if (featureDirectory != null) return new MapLocator(featureDirectory);
                 using var atlas = Cv.Cv2.ImRead(profile.AtlasPath);
                 return new MapLocator(atlas);
             });
@@ -130,13 +150,15 @@ public sealed partial class MainWindow
             _mapRunning = true; _mapTimer.Start(); _mapVisibilityTimer.Start();
             _mapStatus.Text = "已启动。保持攻略小窗可见，并切换到原神开始定位。";
         }
+        catch (OperationCanceledException) { _mapStatus.Text = "地图资源加载已取消。"; }
         catch (Exception ex) { _mapLocator?.Dispose(); _mapLocator = null; _mapStatus.Text = "地图启动失败：" + ex.Message; }
-        finally { _mapBusy = false; }
+        finally { _mapBusy = false; _mapLoadCancellation.Dispose(); _mapLoadCancellation = null; }
     }
 
     private void StopMapTracking()
     {
         _mapRunning = false; _mapGeneration++; _mapTimer.Stop(); _mapVisibilityTimer.Stop();
+        _mapLoadCancellation?.Cancel();
         _mapMarker?.Hide(); _guideConfirmation.Reset(); _gameConfirmation.Reset();
         if (!_mapBusy) { _mapLocator?.Dispose(); _mapLocator = null; }
         _mapStatus.Text = "地图跟随已停止。";

@@ -21,6 +21,11 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        if (args.Length == 1 && args[0] == "--map-region")
+        {
+            MapRegionSpecs.Run();
+            return;
+        }
         if (args.Length == 1 && args[0] == "--map-overlay")
         {
             MapOverlaySpecs.Run();

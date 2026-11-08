@@ -11,6 +11,38 @@ public sealed class MapLocator : IDisposable
     private readonly Mat _descriptors;
     private readonly KeyPoint[] _points;
     private readonly Size _size;
+    private readonly DescriptorMatcher? _indexedMatcher;
+
+    /// <summary>兼容上游 28 字节关键点记录和 PNG 编码 SIFT 描述子；解析器独立实现。</summary>
+    public MapLocator(string featureDirectory)
+    {
+        var keypointPath = Path.Combine(featureDirectory, BuiltInMapAssets.KeypointsFile);
+        var count = new FileInfo(keypointPath).Length / 28;
+        if (count < 30 || count > 2_000_000 || new FileInfo(keypointPath).Length % 28 != 0)
+            throw new InvalidDataException("地图关键点文件格式不正确。");
+        _size = new(22 * 2048, 19 * 2048);
+        _points = new KeyPoint[(int)count];
+        using (var reader = new BinaryReader(File.OpenRead(keypointPath)))
+            for (var i = 0; i < _points.Length; i++)
+            {
+                var x = reader.ReadSingle(); var y = reader.ReadSingle();
+                var size = reader.ReadSingle(); var angle = reader.ReadSingle(); var response = reader.ReadSingle();
+                var octave = reader.ReadInt32(); var classId = reader.ReadInt32();
+                if (!float.IsFinite(x) || !float.IsFinite(y) || x < 0 || y < 0 || x >= _size.Width || y >= _size.Height)
+                    throw new InvalidDataException("地图关键点坐标超出当前资源范围。");
+                _points[i] = new(x, y, size, angle, response, octave, classId);
+            }
+        _features = SIFT.Create(2000); _descriptors = new();
+        try
+        {
+            using var encoded = Cv2.ImRead(Path.Combine(featureDirectory, BuiltInMapAssets.DescriptorsFile), ImreadModes.Grayscale);
+            if (encoded.Rows != count || encoded.Cols != 128) throw new InvalidDataException("地图关键点与描述子数量不一致。");
+            encoded.ConvertTo(_descriptors, MatType.CV_32FC1);
+            _indexedMatcher = new FlannBasedMatcher(new OpenCvSharp.Flann.KDTreeIndexParams(2), new OpenCvSharp.Flann.SearchParams(96));
+            _indexedMatcher.Add([_descriptors]); _indexedMatcher.Train();
+        }
+        catch { Dispose(); throw; }
+    }
 
     public MapLocator(Mat atlas)
     {
@@ -47,7 +79,7 @@ public sealed class MapLocator : IDisposable
         _features.DetectAndCompute(gray, mask, out var points, query);
         if (points.Length < 12 || query.Empty()) return null;
         using var matcher = new BFMatcher(NormTypes.L2);
-        var matches = matcher.KnnMatch(query, _descriptors, 2)
+        var matches = (_indexedMatcher?.KnnMatch(query, 2) ?? matcher.KnnMatch(query, _descriptors, 2))
             .Where(m => m.Length == 2 && m[0].Distance < .7 * m[1].Distance)
             .Select(m => m[0]).OrderBy(m => m.Distance).DistinctBy(m => m.TrainIdx)
             .GroupBy(m => ((int)(points[m.QueryIdx].Pt.X * 4 / gray.Width), (int)(points[m.QueryIdx].Pt.Y * 4 / gray.Height)))
@@ -107,5 +139,5 @@ public sealed class MapLocator : IDisposable
         return gray;
     }
 
-    public void Dispose() { _descriptors.Dispose(); _features.Dispose(); }
+    public void Dispose() { _indexedMatcher?.Dispose(); _descriptors.Dispose(); _features.Dispose(); }
 }
