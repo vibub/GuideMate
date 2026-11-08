@@ -5,6 +5,11 @@ using GuideMate.Vision;
 using OpenCvSharp;
 
 var checks = 0;
+if (args.Length == 3 && args[0] == "--map-frame")
+{
+    MapFrameDiagnostic.Run(args[1], args[2]);
+    return;
+}
 if (args.Length == 3 && args[0] == "--map-tracking-video")
 {
     await MapTrackingVideoChecks.RunAsync(args[1], args[2]);

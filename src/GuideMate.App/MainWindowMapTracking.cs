@@ -10,6 +10,7 @@ public sealed partial class MainWindow
     {
         public readonly MinimapTracker Tracker = new();
         public readonly MapTrackConfirmation Confirmation = new();
+        public readonly MapHeadingConfirmation Heading = new();
         public bool Busy;
         public int Revision, WorkerRevision = -1;
         public ArrowRegion? CaptureRegion;
@@ -34,6 +35,7 @@ public sealed partial class MainWindow
     {
         lane.Revision++; lane.CaptureRegion = null; lane.Position = null;
         lane.Stamp = 0; lane.FailureSince = 0; lane.Confirmation.Reset();
+        lane.Heading.Reset();
         lane.LastFrameId = null; lane.LastFrameLocated = false; lane.SearchingRegion = false; lane.MotionSpeed = 0; lane.GuideInterval = 160;
     }
 
@@ -77,6 +79,7 @@ public sealed partial class MainWindow
             || Math.Abs(_position - _guideMap.VideoTime) > Math.Max(1, _settings.Rate * .8))
         { _mapMarker?.Hide(); return; }
         if (_mapMarker?.IsVisible == true && _drawnGuideStamp == _guideMap.Stamp && _drawnGameStamp == _gameMap.Stamp) return;
+        _mapMarker?.SetHeading(guide.PlayerHeading, game);
         _mapMarker?.Update(_gameMap.MarkerBounds, game, guide.Position);
         _drawnGuideStamp = _guideMap.Stamp; _drawnGameStamp = _gameMap.Stamp;
         _mapStatus.Text = $"攻略 ({guide.Position.X:0}, {guide.Position.Y:0}) · 玩家 ({game.Position.X:0}, {game.Position.Y:0}) · 独立跟随";
@@ -127,6 +130,7 @@ public sealed partial class MainWindow
         }
         lane.FailureSince = 0;
         var position = lane.Confirmation.Accept(observation.Location);
+        if (position != null) position = position with { PlayerHeading = lane.Heading.Accept(position.PlayerHeading, position.HeadingConfidence, timestamp) };
         lane.Position = position;
         if (position == null) { _mapMarker?.Hide(); return null; }
         lane.Stamp = timestamp;
@@ -152,7 +156,9 @@ public sealed partial class MainWindow
                 * 240 / next.Width / Math.Max(.08, (timestamp - lane.Stamp) / 1000d);
             lane.MotionSpeed = .5 * lane.MotionSpeed + .5 * speed;
         }
-        lane.GuideInterval = next == null || confidence < .7 ? 80 : paused ? 400
+        var turning = next?.PlayerHeading is { } angle && lane.Position?.PlayerHeading is { } oldAngle
+            && Math.Abs((angle - oldAngle + 540) % 360 - 180) > 15;
+        lane.GuideInterval = next == null || confidence < .7 || turning ? 80 : paused ? 400
             : lane.MotionSpeed > 12 ? 80 : lane.MotionSpeed > 2 ? 160 : 300;
     }
 

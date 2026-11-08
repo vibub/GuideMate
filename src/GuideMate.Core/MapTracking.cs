@@ -24,6 +24,9 @@ public sealed class MapTrackConfirmation
 public sealed record MapLocation(double A, double B, double Tx, double Ty, int Width, int Height, double Confidence)
 {
     public MapPoint? PlayerPixel { get; init; }
+    /// <summary>统一底图中的玩家朝向：北为 0，顺时针递增。</summary>
+    public double? PlayerHeading { get; init; }
+    public double HeadingConfidence { get; init; }
     public MapPoint Position => ToAtlas(PlayerPixel ?? new(Width / 2d, Height / 2d));
     public MapPoint ToAtlas(MapPoint point) => new(A * point.X - B * point.Y + Tx, B * point.X + A * point.Y + Ty);
     public MapPoint ToMinimap(MapPoint point)
@@ -31,4 +34,22 @@ public sealed record MapLocation(double A, double B, double Tx, double Ty, int W
         var x = point.X - Tx; var y = point.Y - Ty; var scale = A * A + B * B;
         return new((A * x + B * y) / scale, (-B * x + A * y) / scale);
     }
+}
+
+public sealed class MapHeadingConfirmation
+{
+    private double? _heading, _pending;
+    private long _stamp, _pendingStamp;
+    public double? Accept(double? angle, double confidence, long timestamp)
+    {
+        if (angle == null || confidence < .65) { Reset(); return null; }
+        double Difference(double a, double b) => Math.Abs((a - b + 540) % 360 - 180);
+        if (_heading is { } previous && timestamp - _stamp < 500 && Difference(angle.Value, previous) > 75)
+        {
+            if (_pending == null || timestamp - _pendingStamp > 500 || Difference(angle.Value, _pending.Value) > 20)
+            { _pending = angle; _pendingStamp = timestamp; return timestamp - _stamp < 250 ? previous : null; }
+        }
+        _heading = angle; _stamp = timestamp; _pending = null; return angle;
+    }
+    public void Reset() { _heading = null; _pending = null; _stamp = 0; }
 }

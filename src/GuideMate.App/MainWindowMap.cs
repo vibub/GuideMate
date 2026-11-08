@@ -41,7 +41,7 @@ public sealed partial class MainWindow
         panel.Children.Add(Ui.Command("\uE768", "启动地图跟随", StartMapTracking));
         panel.Children.Add(Ui.Command("\uE71A", "停止地图跟随", StopMapTracking));
         panel.Children.Add(_mapStatus);
-        panel.Children.Add(Ui.Text("青色圆点为攻略位置，超出范围时停在地图边缘。隐藏随引、切出游戏或跟踪失效时暂停标记。地图配置独立保存，不改变箭头选区。", 12, Ui.Muted));
+        panel.Children.Add(Ui.Text("青色小箭头表示攻略位置与角色朝向，方向不确定时显示圆点；超出范围停在地图边缘。隐藏随引、切出游戏或跟踪失效时暂停标记。", 12, Ui.Muted));
         _mapTimer.Tick += async (_, _) => await SampleGameMapAsync();
         _guideMapTimer.Tick += async (_, _) => await SampleGuideMapAsync();
         _mapVisibilityTimer.Tick += (_, _) => RenderMapPosition();

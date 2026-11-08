@@ -62,7 +62,8 @@ internal static class ArrowShapeMatcher
                     return d.Item3 / 256d / diagonal >= 0.015 && (dx * ax + dy * ay) / diagonal < -0.06
                         && Math.Abs(dx * ay - dy * ax) / diagonal < 0.18;
                 });
-                if (rearFits && (best == null || result.Score > best.Score)) best = result;
+                if (rearFits && (best == null || result.Score > best.Score))
+                    best = result with { PixelCenter = new(bounds.X + bounds.Width / 2d, bounds.Y + bounds.Height / 2d) };
             }
         }
         return best;
@@ -90,9 +91,15 @@ internal static class ArrowShapeMatcher
             var difference = Math.Abs((templates[i].Angle - best.Angle + 540) % 360 - 180);
             if (difference >= 40) competing = Math.Max(competing, scores[i]);
         }
+        // 同一轮廓模板的相邻角度得分插值，减少 5 度模板步长造成的阶梯抖动。
+        var family = bestIndex / 72 * 72; var slot = bestIndex % 72;
+        var left = scores[family + (slot + 71) % 72]; var right = scores[family + (slot + 1) % 72];
+        var curvature = left - 2 * scores[bestIndex] + right;
+        var correction = Math.Abs(curvature) < 1e-6 ? 0 : Math.Clamp(2.5 * (left - right) / curvature, -2.5, 2.5);
+        var refined = (best.Angle + correction + 360) % 360;
         // Reject ambiguous fits instead of retaining an earlier direction.
         return scores[bestIndex] >= 0.78 && scores[bestIndex] - competing >= 0.02
-            ? new(best.Angle, scores[bestIndex]) : null;
+            ? new(refined, scores[bestIndex]) : null;
     }
 
     private static ulong[] Normalize(Mat shape, Rect bounds)

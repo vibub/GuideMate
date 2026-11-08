@@ -8,6 +8,10 @@ internal sealed class MapMarkerWindow : Window
 {
     private readonly Canvas _canvas = new();
     private readonly Ellipse _dot = new() { Width = 10, Height = 10, Fill = Brushes.Cyan, Stroke = Brushes.Black, StrokeThickness = 1.5 };
+    private readonly Polygon _arrow = new() { Points = new PointCollection { new(0, -9), new(6, 6), new(0, 3), new(-6, 6) },
+        Fill = Brushes.Cyan, Stroke = Brushes.Black, StrokeThickness = 1.5 };
+    private readonly RotateTransform _rotation = new();
+    private double? _heading, _drawHeading;
     private nint _handle;
     private long _lastDraw;
     private double _drawX, _drawY;
@@ -21,11 +25,17 @@ internal sealed class MapMarkerWindow : Window
         AllowsTransparency = true; Background = Brushes.Transparent; ShowInTaskbar = false;
         ShowActivated = false; Topmost = true; IsHitTestVisible = false; Content = _canvas;
         _canvas.Children.Add(_dot);
+        _arrow.RenderTransform = _rotation;
         _handle = new WindowInteropHelper(this).EnsureHandle();
         SetWindowLongPtr(_handle, -20, GetWindowLongPtr(_handle, -20) | 0x08000020 | 0x80);
         // 不能排除自身截图时禁用叠加，避免标记污染后续定位。
         if (!SetWindowDisplayAffinity(_handle, 0x11))
         { Close(); throw new InvalidOperationException("系统无法将地图浮层排除在截图之外，请使用 Windows 10 2004 或更新系统。"); }
+    }
+
+    public void SetHeading(double? atlasHeading, MapLocation game)
+    {
+        _heading = atlasHeading == null ? null : VisualDirectionTrack.Normalize(atlasHeading.Value - Math.Atan2(game.B, game.A) * 180 / Math.PI);
     }
 
     public void Update(System.Drawing.Rectangle bounds, MapLocation game, MapPoint target)
@@ -48,8 +58,18 @@ internal sealed class MapMarkerWindow : Window
             var blend = 1 - Math.Exp(-delta / 35d);
             x = _drawX + (x - _drawX) * blend; y = _drawY + (y - _drawY) * blend;
         }
+        Shape marker = _heading == null ? _dot : _arrow;
+        if (!ReferenceEquals(_canvas.Children[0], marker)) { _canvas.Children.Clear(); _canvas.Children.Add(marker); }
+        if (_heading is { } heading)
+        {
+            var turn = _drawHeading is { } old ? (heading - old + 540) % 360 - 180 : 360;
+            if (IsVisible && bounds == _drawBounds && delta is > 0 and < 200 && Math.Abs(turn) < 18)
+                heading = VisualDirectionTrack.Normalize(_drawHeading!.Value + turn * (1 - Math.Exp(-delta / 35d)));
+            _rotation.Angle = heading; _drawHeading = heading;
+        }
+        else _drawHeading = null;
         _lastDraw = now; _drawBounds = bounds; _drawX = x; _drawY = y; _wasOutside = outside;
-        Canvas.SetLeft(_dot, x - 5); Canvas.SetTop(_dot, y - 5);
+        Canvas.SetLeft(marker, _heading == null ? x - 5 : x); Canvas.SetTop(marker, _heading == null ? y - 5 : y);
         Width = w; Height = h;
         if (!IsVisible) Show();
         SetWindowPos(_handle, -1, bounds.X, bounds.Y, bounds.Width, bounds.Height, 0x0010);

@@ -8,6 +8,8 @@ public sealed class MinimapTracker : IDisposable
 {
     private MinimapObservation? _reference;
     private Mat? _gray;
+    private Mat? _icons;
+    private ArrowDetection? _currentArrow;
     private Size _frameSize;
     private MapLocator? _local;
     private MapLocation? _localOrigin;
@@ -41,7 +43,19 @@ public sealed class MinimapTracker : IDisposable
     public MinimapObservation? Locate(Mat frame, MapLocator locator, bool automatic, bool gameHud, long timestamp)
     {
         UsedTemporalMatch = false;
+        _currentArrow = null;
         var result = LocateCore(frame, locator, automatic, gameHud, timestamp);
+        if (result != null)
+        {
+            using var crop = new Mat(frame, result.Region);
+            var location = result.Location;
+            var arrow = _currentArrow ?? ArrowDetector.DetectNear(crop, location.PlayerPixel ?? new(location.Width / 2d, location.Height / 2d));
+            result = result with { Location = location with
+            {
+                PlayerHeading = arrow == null ? null : VisualDirectionTrack.Normalize(arrow.Angle + Math.Atan2(location.B, location.A) * 180 / Math.PI),
+                HeadingConfidence = arrow?.Score ?? 0
+            } };
+        }
         TrackingConfidence = result == null ? 0 : UsedTemporalMatch ? _motionConfidence : result.Location.Confidence;
         _weakFrames = TrackingConfidence < .7 ? _weakFrames + 1 : 0;
         return result;
@@ -56,10 +70,12 @@ public sealed class MinimapTracker : IDisposable
         {
             using var crop = new Mat(frame, previous.Region);
             var anchor = previous.Location.PlayerPixel ?? new MapPoint(crop.Width / 2d, crop.Height / 2d);
-            if (FindPlayer(crop, anchor) is { } currentAnchor)
+            _currentArrow = ArrowDetector.DetectNear(crop, anchor);
+            if (_currentArrow?.PixelCenter is { } currentAnchor)
             {
                 using var gray = TrackingImage(crop);
-                if (timestamp - _referenceTime <= 2500 && Translation(_gray!, gray) is { } motion)
+                using var icons = TrackingIcons(crop);
+                if (timestamp - _referenceTime <= 2500 && Translation(_gray!, gray, _icons!, icons) is { } motion)
                 {
                     var delta = motion.Shift; _motionConfidence = motion.Confidence;
                     var dx = delta.X * crop.Width / gray.Width; var dy = delta.Y * crop.Height / gray.Height;
@@ -87,6 +103,7 @@ public sealed class MinimapTracker : IDisposable
         }
         if (timestamp - _lastAttempt < 300) return null;
         _lastAttempt = timestamp;
+        _currentArrow = null;
         MinimapObservation? found;
         if (automatic) found = MinimapDetector.Locate(frame, locator, gameHud);
         else
@@ -101,9 +118,9 @@ public sealed class MinimapTracker : IDisposable
 
     private MinimapObservation Remember(Mat frame, MapLocator locator, MinimapObservation found, long timestamp)
     {
-        _gray?.Dispose();
+        _gray?.Dispose(); _icons?.Dispose();
         using var crop = new Mat(frame, found.Region);
-        _gray = TrackingImage(crop); _reference = found; _referenceTime = timestamp;
+        _gray = TrackingImage(crop); _icons = TrackingIcons(crop); _reference = found; _referenceTime = timestamp;
         var localPoint = _localOrigin?.ToMinimap(found.Location.Position);
         var origin = _localOrigin?.PlayerPixel ?? new MapPoint(found.Location.Width / 2d, found.Location.Height / 2d);
         if (_localOrigin == null || localPoint is { } p && (Math.Abs(p.X - origin.X) > _localOrigin.Width * .5 || Math.Abs(p.Y - origin.Y) > _localOrigin.Height * .5))
@@ -113,20 +130,10 @@ public sealed class MinimapTracker : IDisposable
         return found;
     }
 
-    private static MapPoint? FindPlayer(Mat crop, MapPoint anchor)
+    private static Mat TrackingIcons(Mat crop)
     {
-        var side = (int)(Math.Min(crop.Width, crop.Height) * .3);
-        var rect = Rect.Intersect(new((int)anchor.X - side / 2, (int)anchor.Y - side / 2, side, side), new(0, 0, crop.Width, crop.Height));
-        using var center = new Mat(crop, rect); using var scaled = new Mat();
-        Cv2.Resize(center, scaled, new(160, 160));
-        if (ArrowDetector.Detect(scaled, true) == null) return null;
-        using var hsv = new Mat(); using var mask = new Mat();
-        Cv2.CvtColor(center, hsv, ColorConversionCodes.BGR2HSV);
-        Cv2.InRange(hsv, new Scalar(80, 145, 200), new Scalar(106, 255, 255), mask);
-        Cv2.FindContours(mask, out var contours, out _, RetrievalModes.External, ContourApproximationModes.ApproxSimple);
-        var bounds = contours.Where(c => Cv2.ContourArea(c) >= 15).Select(Cv2.BoundingRect)
-            .OrderBy(b => Math.Pow(rect.X + b.X + b.Width / 2d - anchor.X, 2) + Math.Pow(rect.Y + b.Y + b.Height / 2d - anchor.Y, 2)).FirstOrDefault();
-        return bounds.Width < 4 ? null : new(rect.X + bounds.X + bounds.Width / 2d, rect.Y + bounds.Y + bounds.Height / 2d);
+        using var mask = MapIconMask.Create(crop); var scaled = new Mat();
+        Cv2.Resize(mask, scaled, new(256, 256), interpolation: InterpolationFlags.Nearest); return scaled;
     }
 
     private static Mat TrackingImage(Mat crop)
@@ -136,7 +143,7 @@ public sealed class MinimapTracker : IDisposable
     }
 
     // 多块地形必须一致平移；中心箭头、圆周边框以及少数固定图标不参与投票。
-    private static (MapPoint Shift, double Confidence)? Translation(Mat reference, Mat current)
+    private static (MapPoint Shift, double Confidence)? Translation(Mat reference, Mat current, Mat referenceIcons, Mat currentIcons)
     {
         var matches = new List<(double X, double Y, int Px, int Py, double Score)>();
         var patches = new List<(int X, int Y, double Texture)>();
@@ -147,6 +154,8 @@ public sealed class MinimapTracker : IDisposable
             var distance = Math.Sqrt(Math.Pow(x - 128, 2) + Math.Pow(y - 128, 2));
             if (distance < 48 || distance > 92) continue;
             using var patch = new Mat(reference, new Rect(x - 16, y - 16, 32, 32));
+            using var excluded = new Mat(referenceIcons, new Rect(x - 16, y - 16, 32, 32));
+            if (Cv2.CountNonZero(excluded) > 32 * 32 * .08) continue;
             Cv2.MeanStdDev(patch, out _, out var deviation);
             if (deviation.Val0 >= 9) patches.Add((x, y, deviation.Val0));
         }
@@ -157,6 +166,8 @@ public sealed class MinimapTracker : IDisposable
             using var scores = new Mat(); Cv2.MatchTemplate(search, patch, scores, TemplateMatchModes.CCoeffNormed);
             Cv2.MinMaxLoc(scores, out _, out var peak, out _, out var point);
             if (peak < .82 || point.X == 0 || point.Y == 0 || point.X == 64 || point.Y == 64) continue;
+            using var currentExcluded = new Mat(currentIcons, new Rect(px - 48 + point.X, py - 48 + point.Y, 32, 32));
+            if (Cv2.CountNonZero(currentExcluded) > 32 * 32 * .08) continue;
             double Refine(float left, float mid, float right)
             {
                 var d = left - 2 * mid + right;
@@ -175,6 +186,7 @@ public sealed class MinimapTracker : IDisposable
     public void Reset()
     {
         _reference = null; _gray?.Dispose(); _gray = null; _lastAttempt = -1000;
+        _icons?.Dispose(); _icons = null;
         _local?.Dispose(); _local = null; _localOrigin = null;
         _weakFrames = 0; TrackingConfidence = 0;
     }

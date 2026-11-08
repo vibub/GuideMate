@@ -90,10 +90,17 @@ public sealed class MapLocator : IDisposable
     public MapLocation? Locate(Mat minimap, bool requirePlayerArrow = false, MapPoint? playerPixel = null)
     {
         // 两路共享全图索引；SIFT/FLANN 原生实例不能同时查询。各自的快速跟踪和邻域索引不共用此锁。
-        lock (_matchGate) return LocateCore(minimap, requirePlayerArrow, playerPixel);
+        lock (_matchGate)
+        {
+            var result = LocateCore(minimap, requirePlayerArrow, playerPixel);
+            if (result != null || minimap.Empty() || minimap.Channels() != 3) return result;
+            using var icons = MapIconMask.Create(minimap);
+            return Cv2.CountNonZero(icons) < minimap.Width * minimap.Height * .003 ? null
+                : LocateCore(minimap, requirePlayerArrow, playerPixel, icons);
+        }
     }
 
-    private MapLocation? LocateCore(Mat minimap, bool requirePlayerArrow, MapPoint? playerPixel)
+    private MapLocation? LocateCore(Mat minimap, bool requirePlayerArrow, MapPoint? playerPixel, Mat? icons = null)
     {
         if (minimap.Empty() || minimap.Width < 96 || minimap.Height < 96) return null;
         if (requirePlayerArrow)
@@ -107,8 +114,9 @@ public sealed class MapLocator : IDisposable
         using var mask = new Mat(gray.Size(), MatType.CV_8UC1, Scalar.Black);
         var center = playerPixel is { } player ? new Point((int)player.X, (int)player.Y) : new Point(gray.Width / 2, gray.Height / 2);
         var radius = Math.Min(gray.Width, gray.Height) / 2;
-        Cv2.Circle(mask, center, (int)(radius * .88), Scalar.White, -1);
+        Cv2.Circle(mask, center, (int)(radius * (icons == null ? .88 : .94)), Scalar.White, -1);
         Cv2.Circle(mask, center, (int)(radius * .17), Scalar.Black, -1);
+        if (icons != null) mask.SetTo(Scalar.Black, icons);
         using var query = new Mat();
         _features.DetectAndCompute(gray, mask, out var points, query);
         if (points.Length < 12 || query.Empty()) return null;
