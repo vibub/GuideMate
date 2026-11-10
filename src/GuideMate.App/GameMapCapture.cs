@@ -8,7 +8,7 @@ namespace GuideMate.App;
 internal static class GameMapCapture
 {
     internal sealed record Frame(byte[] Image, Drawing.Rectangle Bounds, nint Handle);
-    internal sealed record PixelFrame(Cv.Mat Image, Drawing.Rectangle Bounds, nint Handle) : IDisposable
+    internal sealed record PixelFrame(Cv.Mat Image, Drawing.Rectangle Bounds, nint Handle, long CaptureStarted) : IDisposable
     {
         public void Dispose() => Image.Dispose();
     }
@@ -50,8 +50,13 @@ internal static class GameMapCapture
         var bounds = Bounds(handle, region);
         if (bounds.Width < 32 || bounds.Height < 32 || bounds.Width > 7680 || bounds.Height > 4320) return null;
         using var bitmap = new Drawing.Bitmap(bounds.Width, bounds.Height, Drawing.Imaging.PixelFormat.Format24bppRgb);
+        long captureStarted;
         using (var graphics = Drawing.Graphics.FromImage(bitmap))
+        {
+            // 图像有效期从实际截图开始计，排除后台任务排队及截图准备时间。
+            captureStarted = Environment.TickCount64;
             graphics.CopyFromScreen(bounds.Location, Drawing.Point.Empty, bounds.Size, Drawing.CopyPixelOperation.SourceCopy);
+        }
         if (ForegroundGame() != handle || bounds != Bounds(handle, region)) return null;
         var pixels = bitmap.LockBits(new(0, 0, bitmap.Width, bitmap.Height), Drawing.Imaging.ImageLockMode.ReadOnly,
             Drawing.Imaging.PixelFormat.Format24bppRgb);
@@ -61,7 +66,7 @@ internal static class GameMapCapture
             using var view = Cv.Mat.FromPixelData(bitmap.Height, bitmap.Width, Cv.MatType.CV_8UC3, start, Math.Abs(pixels.Stride));
             var owned = view.Clone();
             if (pixels.Stride < 0) Cv.Cv2.Flip(owned, owned, Cv.FlipMode.X);
-            return new(owned, bounds, handle);
+            return new(owned, bounds, handle, captureStarted);
         }
         finally { bitmap.UnlockBits(pixels); }
     }

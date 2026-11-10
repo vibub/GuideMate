@@ -1,8 +1,12 @@
+using System.Diagnostics;
 using GuideMate.Core;
 using OpenCvSharp;
 using OpenCvSharp.Features2D;
 
 namespace GuideMate.Vision;
+
+/// <summary>单次定位耗时；匹配计算与原生索引锁等待分别记录。</summary>
+public readonly record struct MapMatchDiagnostics(double MatchMs, double LockWaitMs);
 
 /// <summary>地表北向地图定位。仅使用图像；不读取游戏内存。</summary>
 public sealed class MapLocator : IDisposable
@@ -88,15 +92,30 @@ public sealed class MapLocator : IDisposable
     }
 
     public MapLocation? Locate(Mat minimap, bool requirePlayerArrow = false, MapPoint? playerPixel = null)
+        => Locate(minimap, out _, requirePlayerArrow, playerPixel);
+
+    public MapLocation? Locate(Mat minimap, out MapMatchDiagnostics diagnostics,
+        bool requirePlayerArrow = false, MapPoint? playerPixel = null)
     {
-        // 两路共享全图索引；SIFT/FLANN 原生实例不能同时查询。各自的快速跟踪和邻域索引不共用此锁。
+        // 两路共享全图索引；SIFT/FLANN 原生实例不能同时查询。各路诊断由调用者持有，不共享末次计时。
+        var started = Stopwatch.GetTimestamp();
+        diagnostics = default;
         lock (_matchGate)
         {
-            var result = LocateCore(minimap, requirePlayerArrow, playerPixel);
-            if (result != null || minimap.Empty() || minimap.Channels() != 3) return result;
-            using var icons = MapIconMask.Create(minimap);
-            return Cv2.CountNonZero(icons) < minimap.Width * minimap.Height * .003 ? null
-                : LocateCore(minimap, requirePlayerArrow, playerPixel, icons);
+            var acquired = Stopwatch.GetTimestamp();
+            try
+            {
+                var result = LocateCore(minimap, requirePlayerArrow, playerPixel);
+                if (result != null || minimap.Empty() || minimap.Channels() != 3) return result;
+                using var icons = MapIconMask.Create(minimap);
+                return Cv2.CountNonZero(icons) < minimap.Width * minimap.Height * .003 ? null
+                    : LocateCore(minimap, requirePlayerArrow, playerPixel, icons);
+            }
+            finally
+            {
+                diagnostics = new(Stopwatch.GetElapsedTime(acquired).TotalMilliseconds,
+                    Stopwatch.GetElapsedTime(started, acquired).TotalMilliseconds);
+            }
         }
     }
 

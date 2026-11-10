@@ -68,13 +68,19 @@ public static class MinimapDetector
     }
 
     public static MinimapObservation? Locate(Mat frame, MapLocator locator, bool gameHud = false)
+        => Locate(frame, locator, out _, gameHud);
+
+    public static MinimapObservation? Locate(Mat frame, MapLocator locator, out MapMatchDiagnostics diagnostics, bool gameHud = false)
     {
+        diagnostics = default;
         foreach (var candidate in FindCandidates(frame))
         {
             // 游戏只接受左上角 HUD；攻略允许剪辑放大或大地图中的玩家位置。
             if (gameHud && !IsGameHudCandidate(candidate, frame.Width, frame.Height)) continue;
             using var crop = new Mat(frame, candidate.Region);
-            var location = locator.Locate(crop, playerPixel: candidate.Player);
+            var location = locator.Locate(crop, out var candidateDiagnostics, playerPixel: candidate.Player);
+            diagnostics = new(diagnostics.MatchMs + candidateDiagnostics.MatchMs,
+                diagnostics.LockWaitMs + candidateDiagnostics.LockWaitMs);
             if (location != null) return new(candidate.Region, location);
         }
         return null;

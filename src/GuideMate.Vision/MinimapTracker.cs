@@ -1,7 +1,12 @@
+using System.Diagnostics;
 using GuideMate.Core;
 using OpenCvSharp;
 
 namespace GuideMate.Vision;
+
+/// <summary>每帧独立诊断快照；参考年龄为本帧开始时的绝对定位参考年龄。</summary>
+public sealed record MapTrackingDiagnostics(double TemporalMatchMs, double LocalMatchMs, double GlobalMatchMs,
+    double LocalLockWaitMs, double GlobalLockWaitMs, long? ReferenceAgeMs);
 
 /// <summary>复用已定位区域，以地形块相对绝对定位帧的位移更新坐标，避免逐帧全图搜索和累计漂移。</summary>
 public sealed class MinimapTracker : IDisposable
@@ -13,14 +18,14 @@ public sealed class MinimapTracker : IDisposable
     private Size _frameSize;
     private MapLocator? _local;
     private MapLocation? _localOrigin;
-    private long _globalTime;
     private long _referenceTime, _lastAttempt = -1000, _lastLocalAttempt = -1000;
     public bool UsedTemporalMatch { get; private set; }
     public double TrackingConfidence { get; private set; }
     public string MatchState { get; private set; } = "idle";
     private double _motionConfidence;
-    private int _weakFrames;
-    public bool NeedsWiderSearch => _weakFrames >= 3;
+    private int _failedFrames;
+    public bool NeedsWiderSearch => _failedFrames >= 3;
+    public MapTrackingDiagnostics Diagnostics { get; private set; } = new(0, 0, 0, 0, 0, null);
 
     /// <summary>采集从整帧切换为已锁定选区时，保留绝对参考并换算裁切后的像素尺度。</summary>
     public MinimapObservation? LocateCropped(Mat frame, MapLocator locator, long timestamp, bool fixedPlayerCenter = false)
@@ -46,7 +51,11 @@ public sealed class MinimapTracker : IDisposable
         UsedTemporalMatch = false;
         MatchState = "searching";
         _currentArrow = null;
-        var result = LocateCore(frame, locator, automatic, gameHud, timestamp, fixedPlayerCenter);
+        MapMatchDiagnostics local = default, global = default;
+        var temporalMs = 0d;
+        var referenceAge = _reference == null ? (long?)null : timestamp - _referenceTime;
+        var result = LocateCore(frame, locator, automatic, gameHud, timestamp, fixedPlayerCenter, ref local, ref global, ref temporalMs);
+        Diagnostics = new(temporalMs, local.MatchMs, global.MatchMs, local.LockWaitMs, global.LockWaitMs, referenceAge);
         if (result != null)
         {
             using var crop = new Mat(frame, result.Region);
@@ -59,11 +68,13 @@ public sealed class MinimapTracker : IDisposable
             } };
         }
         TrackingConfidence = result == null ? 0 : UsedTemporalMatch ? _motionConfidence : result.Location.Confidence;
-        _weakFrames = TrackingConfidence < .7 ? _weakFrames + 1 : 0;
+        // 有效的四块地形也可能低于 .7；置信度只影响调度，不能把成功定位当作扩区失败。
+        _failedFrames = result == null ? _failedFrames + 1 : 0;
         return result;
     }
 
-    private MinimapObservation? LocateCore(Mat frame, MapLocator locator, bool automatic, bool gameHud, long timestamp, bool fixedPlayerCenter)
+    private MinimapObservation? LocateCore(Mat frame, MapLocator locator, bool automatic, bool gameHud, long timestamp,
+        bool fixedPlayerCenter, ref MapMatchDiagnostics local, ref MapMatchDiagnostics global, ref double temporalMs)
     {
         if (frame.Size() != _frameSize) Reset();
         _frameSize = frame.Size();
@@ -79,6 +90,7 @@ public sealed class MinimapTracker : IDisposable
             var player = _currentArrow?.PixelCenter ?? (fixedPlayerCenter ? anchor : (MapPoint?)null);
             if (player is { } currentAnchor)
             {
+                var temporalStarted = Stopwatch.GetTimestamp();
                 using var gray = TrackingImage(crop);
                 using var icons = TrackingIcons(crop);
                 if (timestamp - _referenceTime <= 2500 && Translation(_gray!, gray, _icons!, icons) is { } motion)
@@ -88,6 +100,7 @@ public sealed class MinimapTracker : IDisposable
                     var p = previous.Location;
                     tracked = previous with { Location = p with { Tx = p.Tx - p.A * dx + p.B * dy, Ty = p.Ty - p.B * dx - p.A * dy, PlayerPixel = currentAnchor } };
                 }
+                temporalMs = Stopwatch.GetElapsedTime(temporalStarted).TotalMilliseconds;
                 var verifyInterval = TrackingConfidence >= .8 ? 1500 : 500;
                 if (tracked == null || timestamp - _referenceTime >= verifyInterval)
                 {
@@ -96,17 +109,16 @@ public sealed class MinimapTracker : IDisposable
                     if (_local != null && timestamp - _lastLocalAttempt >= (tracked == null ? 80 : 300))
                     {
                         _lastLocalAttempt = timestamp;
-                        fix = _local.Locate(crop, playerPixel: currentAnchor);
+                        fix = _local.Locate(crop, out local, playerPixel: currentAnchor);
                         if (fix == null && tracked == null) MatchState = "local_not_matched";
                     }
                     else if (tracked == null) MatchState = "local_search_throttled";
-                    var globalDue = timestamp - _globalTime >= (TrackingConfidence >= .8 ? 8000 : 2500);
-                    // 邻域已给出新绝对位置时无需再等待共享全图索引。
-                    if (fix == null && (globalDue || tracked == null) && timestamp - _lastAttempt >= 300)
+                    // 已有本帧有效位移时及时返回；全图索引的等待不能拖住新位置。
+                    // 绝对参考超过 2.5 秒后不再生成 tracked，仍须重新绝对定位。
+                    if (fix == null && tracked == null && timestamp - _lastAttempt >= 300)
                     {
-                        _lastAttempt = timestamp; _globalTime = timestamp;
-                        var globalFix = locator.Locate(crop, playerPixel: currentAnchor);
-                        fix = globalFix ?? fix;
+                        _lastAttempt = timestamp;
+                        fix = locator.Locate(crop, out global, playerPixel: currentAnchor);
                         if (fix == null && tracked == null) MatchState = "atlas_not_matched";
                     }
                     if (fix != null) return Remember(frame, locator, new(previous.Region, fix), timestamp);
@@ -121,14 +133,13 @@ public sealed class MinimapTracker : IDisposable
         _lastAttempt = timestamp;
         _currentArrow = null;
         MinimapObservation? found;
-        if (automatic) found = MinimapDetector.Locate(frame, locator, gameHud);
+        if (automatic) found = MinimapDetector.Locate(frame, locator, out global, gameHud);
         else
         {
-            var fix = locator.Locate(frame, true);
+            var fix = locator.Locate(frame, out global, true);
             found = fix == null ? null : new(new(0, 0, frame.Width, frame.Height), fix);
         }
         if (found == null) { MatchState = "atlas_not_matched"; return null; }
-        _globalTime = timestamp;
         return Remember(frame, locator, found, timestamp);
     }
 
@@ -213,7 +224,8 @@ public sealed class MinimapTracker : IDisposable
         _reference = null; _gray?.Dispose(); _gray = null; _lastAttempt = _lastLocalAttempt = -1000;
         _icons?.Dispose(); _icons = null;
         _local?.Dispose(); _local = null; _localOrigin = null;
-        _weakFrames = 0; TrackingConfidence = 0;
+        _failedFrames = 0; TrackingConfidence = 0;
+        Diagnostics = new(0, 0, 0, 0, 0, null);
     }
     public void Dispose() => Reset();
 }

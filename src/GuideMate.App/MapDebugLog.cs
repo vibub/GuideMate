@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
@@ -24,7 +25,8 @@ internal sealed class MapDebugLog
             65536, FileOptions.Asynchronous | FileOptions.SequentialScan);
         Completion = Task.Run(() => WriteAsync(stream));
         Record("session_start", new { version = typeof(MainWindow).Assembly.GetName().Version?.ToString(),
-            maximumBytes = MaximumBytes, formatVersion = 1 });
+            build = typeof(MainWindow).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion,
+            maximumBytes = MaximumBytes, formatVersion = 2 });
     }
 
     public void Record(string kind, object? detail)

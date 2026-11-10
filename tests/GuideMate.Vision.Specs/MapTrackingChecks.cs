@@ -135,6 +135,7 @@ internal static class MapTrackingChecks
             Check(!BuiltInMapAssets.IsReadyAsync(destination).GetAwaiter().GetResult(), "不存在的资源不被当作离线缓存");
         }
         finally { File.Delete(archive); Directory.Delete(temporary); }
+        checks += MapFlickerChecks.Run();
         Console.WriteLine($"Map synthetic checks: {checks}; elapsed {watch.ElapsedMilliseconds} ms (not a game benchmark)");
         return checks;
     }

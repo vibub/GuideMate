@@ -61,7 +61,7 @@ public sealed partial class MainWindow
         Closed += (_, _) =>
         {
             StopMapTracking(); _mapMarker?.Close(); _mapMarker = null;
-            _mapDebug?.Complete(); _mapDebug?.Completion.Wait(TimeSpan.FromSeconds(2)); _mapDebug = null;
+            if (_mapDebug is { } log) { CompleteMapDebug(log); log.Completion.Wait(TimeSpan.FromSeconds(2)); } _mapDebug = null;
         };
         return panel;
     }
